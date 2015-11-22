@@ -114,9 +114,11 @@ bpred_create(enum bpred_class class,  /* type of predictor to create */
     break;
   
   case BPredPerceptron:
+  case BPredGGH:
     // Create our perceptron predictor. 
-    pred->dirpred.perceptron = bpred_dir_create(class,l1size,l2size/* # of weight bits in this case */,shift_width,0);
+    pred->dirpred.perceptron = bpred_dir_create(class,l1size,l2size/* # of weight bits in this case */, shift_width, xor);
     break;
+
   case BPred2bit:
     pred->dirpred.bimod = 
       bpred_dir_create(class, bimod_size, 0, 0, 0);
@@ -134,6 +136,7 @@ bpred_create(enum bpred_class class,  /* type of predictor to create */
   case BPred2Level:
   case BPred2bit:
   case BPredPerceptron:
+  case BPredGGH:
     {
       int i;
 
@@ -246,6 +249,7 @@ bpred_dir_create (
     }
   // Create our perceptron
   case BPredPerceptron:
+  case BPredGGH:
     // Initialize the histories to be 0
     pred_dir->config.percept.temp_history = 0;
     pred_dir->config.percept.committed_history = 0;
@@ -259,9 +263,10 @@ bpred_dir_create (
     pred_dir->config.percept.num_perceptrons = l1size;
     pred_dir->config.percept.num_weight_bits = l2size;
     pred_dir->config.percept.perceptron_len = shift_width;
+    pred_dir->config.percept.num_GGH_sets = xor;
     if(!(pred_dir->config.percept.perceptrons = calloc(l1size, sizeof(int)*(shift_width+1))))
       fatal("Perceptron allocation failed");
-   break;
+    break;
   case BPred2bit:
     if (!l1size || (l1size & (l1size-1)) != 0)
       fatal("2bit table size, `%d', must be non-zero and a power of two", 
@@ -307,6 +312,7 @@ bpred_dir_config(
     break;
 
   case BPredPerceptron:
+  case BPredGGH:
     fprintf(stream,"pred_dir: %s: # perceptrons: %d # percept bits, %d # weight bits, %d",
       name, pred_dir->config.percept.num_perceptrons, pred_dir->config.percept.perceptron_len, pred_dir->config.percept.num_weight_bits);
     break;
@@ -345,6 +351,7 @@ bpred_config(struct bpred_t *pred,  /* branch predictor instance */
     break;
 
   case BPredPerceptron:
+  case BPredGGH:
     bpred_dir_config (pred->dirpred.bimod, "percept", stream);
     fprintf(stream, "btb: %d sets x %d associativity", 
       pred->btb.sets, pred->btb.assoc);
@@ -403,6 +410,9 @@ bpred_reg_stats(struct bpred_t *pred, /* branch predictor instance */
       break;
     case BPredPerceptron:
       name = "bpred_percept";
+      break;
+    case BPredGGH:
+      name = "bpred_ggh";
       break;
     case BPred2Level:
       name = "bpred_2lev";
@@ -590,6 +600,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
 
     // Perceptron branch address prediction
     case BPredPerceptron:
+    case BPredGGH:
     {
       // First index into the perceptron table
       int index;
@@ -603,7 +614,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
       for(i=1;i<=pred_dir->config.percept.perceptron_len;i++){
         weight++; // Increment the poninter to the weight
         // If we took that branch in the past add it to our confidence
-        if(pred_dir->config.percept.temp_history&1>>i)
+        if(pred_dir->config.percept.temp_history&(1<<i))
           confidence += *weight;
         // Otherwise subtract it
         else
@@ -617,13 +628,36 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
       percept_update* perceptron_update;
       if (!(perceptron_update = calloc(1, sizeof(percept_update))))
         fatal("perceptron update allocation failed");
-      perceptron_update->prediction = adjusted_prediction;
+      perceptron_update-> prediction = adjusted_prediction;
       perceptron_update-> binary_prediction = prediction;
-      perceptron_update->temp_history = pred_dir->config.percept.temp_history;
-      perceptron_update->perceptron = perceptron;
+      perceptron_update-> temp_history = pred_dir->config.percept.temp_history;
+      perceptron_update-> perceptron = perceptron;
       // Update our temporary (uncommitted) history
-      pred_dir->config.percept.temp_history <<= 1;
-      pred_dir->config.percept.temp_history += prediction;
+
+      if (pred_dir->class == BPredGGH) //TODO Check that this syntax is valid
+      {
+        /* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
+        int num_sets;
+        num_sets = pred_dir->config.percept.num_GGH_sets;
+        int set; // index of the set we want
+        set = baddr & (num_sets-1); // gets the low order bits
+        // perceptron_len is the same length as the number of bits in our history
+        int set_length; // number of bits per set
+        set_length = pred_dir->config.percept.perceptron_len / num_sets;
+        long long mask; // 0 for the bits we don't want in total history
+        mask = ((1 << set_length) - 1) << (set * set_length);
+        long long history_t; // just to make the next math cleaner
+        history_t = pred_dir->config.percept.temp_history;
+        // bit masking function! looks messy but should work
+        pred_dir->config.percept.temp_history = ((history_t & (~mask)) & 
+          (((history_t & mask) << 1) & mask)) + (prediction << (set * set_length));
+      }
+      else
+      {
+        pred_dir->config.percept.temp_history <<= 1;
+        pred_dir->config.percept.temp_history += prediction;
+      }
+
       // Pass the struct to the next stage so we can later use its values
       p = (char *)perceptron_update;
     }
@@ -1020,7 +1054,7 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
   /* update state (but not for jumps) */
   if (dir_update_ptr->pdir1)
     {
-      if(pred->class == BPredPerceptron)
+      if(pred->class == BPredPerceptron || pred->class == BPredGGH)
       {
         percept_update *update;
         update = (percept_update *) dir_update_ptr->pdir1;
@@ -1029,8 +1063,27 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
         train = 1;
 
         /* update history */
-        pred->dirpred.perceptron->config.percept.committed_history <<= 1;
-        pred->dirpred.perceptron->config.percept.committed_history += taken;
+        if( pred-class == BPredGGH)
+        {
+          int num_sets;
+          num_sets = pred->dirpred.perceptron->config.percept.num_GGH_sets;
+          int set; // index of the set we want
+          set = baddr & (num_sets-1); // gets the low order bits
+          // perceptron_len is the same length as the number of bits in our history
+          int set_length; // number of bits per set
+          set_length = pred->dirpred.perceptron->config.percept.perceptron_len / num_sets;
+          long long mask; // 0 for the bits we don't want in total history
+          mask = ((1 << set_length) - 1) << (set * set_length);
+          long long history_t;
+          history_t = pred->dirpred.perceptron->config.percept.temp_history;
+          pred->dirpred.perceptron->config.percept.temp_history = ((history_t & (~mask)) & 
+            (((history_t & mask) << 1) & mask)) + (prediction << (set * set_length));
+        }
+        else
+        {
+          pred->dirpred.perceptron->config.percept.committed_history <<= 1;
+          pred->dirpred.perceptron->config.percept.committed_history += taken;
+        }
 
         /* if you mispredicted roll back the temp history */
         if (update->binary_prediction == 0){
@@ -1049,7 +1102,7 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
           /*weight is pointer to the first weight value in the perceptron */
           weight = &update->perceptron[0];
 
-          update->temp_history>>=1;
+          update->temp_history<<=1;
           if(taken)
             update->temp_history++;
           history = update->temp_history;

@@ -133,6 +133,7 @@ struct bpred_dir_t {
         long long temp_history; /* temporary uncommitted history */
         long long committed_history; /* committed_history */
         int *perceptrons; /* a table of perceptrons */
+        int num_GGH_sets; /* the number of sets of the GGH table */
     } percept;
     struct {
       int l1size;		/* level-1 size, number of history regs */
