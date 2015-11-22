@@ -95,7 +95,7 @@ static int perceptron_config[3] =
 /* ggh default parameters */
 static int ggh_nelt = 4;
 static int ggh_config[4] = 
-  {perceptron_config[0]/* # perceptrons */,perceptron_config[1]/* # weight bits */,perceptron_config[1] /* # perceptron bits */, 4 /*number of GGH sets */};
+  {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */, 4 /*number of GGH sets */};
 
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
@@ -261,11 +261,11 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
     }
   else if (!mystricmp(pred_type,"ggh"))
     {
-      if(GGH_nelt!=4)
+      if(ggh_nelt!=4)
         fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
 
-      pred = bpred_create(BPredGGH,0,GGH_config[0],GGH_config[1],0,
-        GGH_config[2],GGH_config[3],btb_config[0],btb_config[1],ras_size);
+      pred = bpred_create(BPredGGH,0,ggh_config[0],ggh_config[1],0,
+        ggh_config[2],ggh_config[3],btb_config[0],btb_config[1],ras_size);
     }
   else if (!mystricmp(pred_type, "comb"))
     {

@@ -314,7 +314,6 @@ bpred_dir_config(
       name, pred_dir->config.two.l1size, pred_dir->config.two.shift_width,
       pred_dir->config.two.xor ? "" : "no", pred_dir->config.two.l2size);
     break;
-  case BPredGGH:
   case BPredPerceptron:
   case BPredGGH:
     fprintf(stream,"pred_dir: %s: # perceptrons: %d # percept bits, %d # weight bits, %d",
@@ -410,9 +409,6 @@ bpred_reg_stats(struct bpred_t *pred, /* branch predictor instance */
     {
     case BPredComb:
       name = "bpred_comb";
-      break;
-    case BPredGGH:
-      name = "bpred_ggh";
       break;
     case BPredPerceptron:
       name = "bpred_percept";
@@ -1070,7 +1066,7 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
         train = 0;
 
         /* update history */
-        if( pred-class == BPredGGH)
+        if( pred->class == BPredGGH)
         {
           int num_sets;
           num_sets = pred->dirpred.perceptron->config.percept.num_GGH_sets;
@@ -1084,7 +1080,7 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
           long long history_t;
           history_t = pred->dirpred.perceptron->config.percept.temp_history;
           pred->dirpred.perceptron->config.percept.temp_history = ((history_t & (~mask)) & 
-            (((history_t & mask) << 1) & mask)) + (prediction << (set * set_length));
+            (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
         }
         else
         {
