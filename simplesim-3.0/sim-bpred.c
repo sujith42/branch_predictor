@@ -87,6 +87,11 @@ static int bimod_nelt = 1;
 static int bimod_config[1] =
   { /* bimod tbl size */2048 };
 
+/* perceptron default parameters */
+static int perceptron_nelt = 3;
+static int perceptron_config[3] = 
+  {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */};
+
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
 static int twolev_config[4] =
@@ -155,6 +160,11 @@ sim_reg_options(struct opt_odb_t *odb)
 		   bimod_config, bimod_nelt, &bimod_nelt,
 		   /* default */bimod_config,
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+
+  opt_reg_int_list(odb, "-bpred:perceptron",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>",
+          perceptron_config,perceptron_nelt,&perceptron_nelt,perceptron_config,TRUE,NULL,FALSE);
+
 
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
@@ -232,6 +242,13 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 			  /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
 			  /* ret-addr stack size */ras_size);
+    }
+  else if (!mystricmp(pred_type,"perceptron"))
+    {
+      if(perceptron_nelt!=3)
+        fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+      pred = bpred_create(BPredPerceptron,0,perceptron_config[0],perceptron_config[1],0,
+        perceptron_config[2],0,btb_config[0],btb_config[1],ras_size);
     }
   else if (!mystricmp(pred_type, "comb"))
     {

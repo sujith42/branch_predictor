@@ -95,6 +95,8 @@
  *
  *	BPredNotTaken:  static predict branch not taken
  *
+ *  BPredPerceptron: perceptron predictor
+ *
  */
 
 /* branch predictor types */
@@ -104,6 +106,7 @@ enum bpred_class {
   BPred2bit,			/* 2-bit saturating cntr pred (dir mapped) */
   BPredTaken,			/* static predict taken */
   BPredNotTaken,		/* static predict not taken */
+  BPredPerceptron,  /* perceptron predictor */
   BPred_NUM
 };
 
@@ -124,6 +127,14 @@ struct bpred_dir_t {
       unsigned char *table;	/* prediction state table */
     } bimod;
     struct {
+        int num_weight_bits; /* # of bits used for weighting the perceptron */
+        int perceptron_len; /* length of the perceptron */
+        int num_perceptrons; /* # total perceptrons */
+        long long temp_history; /* temporary uncommitted history */
+        long long committed_history; /* committed_history */
+        int *perceptrons; /* a table of perceptrons */
+    } percept;
+    struct {
       int l1size;		/* level-1 size, number of history regs */
       int l2size;		/* level-2 size, number of pred states */
       int shift_width;		/* amount of history in level-1 shift regs */
@@ -141,6 +152,7 @@ struct bpred_t {
     struct bpred_dir_t *bimod;	  /* first direction predictor */
     struct bpred_dir_t *twolev;	  /* second direction predictor */
     struct bpred_dir_t *meta;	  /* meta predictor */
+    struct bpred_dir_t *perceptron; /* perceptron predictor */
   } dirpred;
 
   struct {

@@ -4,7 +4,7 @@ cd ../simplesim-3.0/
 make
 cd ../benchmarks
 cp ../simplesim-3.0/sim-bpred ./sim-bpred
-chmod +x sim-bpred
+chmod +x sim-outorder
 read  -p "Make above Press key to continue:" mainmenuinput -n 1
 ./sim-bpred $SIM_FLAGS anagram.alpha words < anagram.in > OUT
 read  -p "anagram above Press key to continue:" mainmenuinput -n 1
