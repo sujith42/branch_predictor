@@ -92,6 +92,11 @@ static int perceptron_nelt = 3;
 static int perceptron_config[3] = 
   {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */};
 
+/* ggh default parameters */
+static int ggh_nelt = 4;
+static int ggh_config[4] = 
+  {perceptron_config[0]/* # perceptrons */,perceptron_config[1]/* # weight bits */,perceptron_config[1] /* # perceptron bits */, 4 /*number of GGH sets */};
+
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
 static int twolev_config[4] =
@@ -165,6 +170,9 @@ sim_reg_options(struct opt_odb_t *odb)
         "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>",
           perceptron_config,perceptron_nelt,&perceptron_nelt,perceptron_config,TRUE,NULL,FALSE);
 
+  opt_reg_int_list(odb, "-bpred:ggh",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits> <# ggh sets>",
+          ggh_config,ggh_nelt,&ggh_nelt,ggh_config,TRUE,NULL,FALSE);
 
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
@@ -247,8 +255,17 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
     {
       if(perceptron_nelt!=3)
         fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+
       pred = bpred_create(BPredPerceptron,0,perceptron_config[0],perceptron_config[1],0,
         perceptron_config[2],0,btb_config[0],btb_config[1],ras_size);
+    }
+  else if (!mystricmp(pred_type,"ggh"))
+    {
+      if(GGH_nelt!=4)
+        fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+
+      pred = bpred_create(BPredGGH,0,GGH_config[0],GGH_config[1],0,
+        GGH_config[2],GGH_config[3],btb_config[0],btb_config[1],ras_size);
     }
   else if (!mystricmp(pred_type, "comb"))
     {
