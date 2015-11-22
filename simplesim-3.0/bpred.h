@@ -107,6 +107,7 @@ enum bpred_class {
   BPredTaken,			/* static predict taken */
   BPredNotTaken,		/* static predict not taken */
   BPredPerceptron,  /* perceptron predictor */
+  BPredGGH,   /* GGH predictor */
   BPred_NUM
 };
 

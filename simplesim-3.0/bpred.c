@@ -254,11 +254,15 @@ bpred_dir_create (
     if(!l2size)
       fatal("num weight bits, `%d', must be non-zero and positive", l2size);
     if(!shift_width)
-      fatal("num perceptron bits, `%d', must be non-zero and positive", shift_width);
+      fatal("len perceptron, `%d', must be non-zero and positive", shift_width);
+    if(l2size>sizeof(int)*8)
+      fatal("num weight bits, `%d', must be less than 32 (with current assumptions",l2size);
     // If our configuration checks out, create our predictor
     pred_dir->config.percept.num_perceptrons = l1size;
     pred_dir->config.percept.num_weight_bits = l2size;
     pred_dir->config.percept.perceptron_len = shift_width;
+    // sizeof(int) is the number of weight bits. We're just using int for simplicity and assuming
+    // width will never be greater than 32
     if(!(pred_dir->config.percept.perceptrons = calloc(l1size, sizeof(int)*(shift_width+1))))
       fatal("Perceptron allocation failed");
    break;
@@ -305,7 +309,7 @@ bpred_dir_config(
       name, pred_dir->config.two.l1size, pred_dir->config.two.shift_width,
       pred_dir->config.two.xor ? "" : "no", pred_dir->config.two.l2size);
     break;
-
+  case BPredGGH:
   case BPredPerceptron:
     fprintf(stream,"pred_dir: %s: # perceptrons: %d # percept bits, %d # weight bits, %d",
       name, pred_dir->config.percept.num_perceptrons, pred_dir->config.percept.perceptron_len, pred_dir->config.percept.num_weight_bits);
@@ -343,9 +347,9 @@ bpred_config(struct bpred_t *pred,  /* branch predictor instance */
       pred->btb.sets, pred->btb.assoc);
     fprintf(stream, "ret_stack: %d entries", pred->retstack.size);
     break;
-
+  case BPredGGH:
   case BPredPerceptron:
-    bpred_dir_config (pred->dirpred.bimod, "percept", stream);
+    bpred_dir_config (pred->dirpred.perceptron, "percept", stream);
     fprintf(stream, "btb: %d sets x %d associativity", 
       pred->btb.sets, pred->btb.assoc);
     fprintf(stream, "ret_stack: %d entries", pred->retstack.size);
@@ -400,6 +404,9 @@ bpred_reg_stats(struct bpred_t *pred, /* branch predictor instance */
     {
     case BPredComb:
       name = "bpred_comb";
+      break;
+    case BPredGGH:
+      name = "bpred_ggh";
       break;
     case BPredPerceptron:
       name = "bpred_percept";
@@ -538,7 +545,7 @@ bpred_after_priming(struct bpred_t *bpred)
 typedef struct {
   char prediction;  /* use struct magic to pass the prediction and our struct */
   int binary_prediction; /* a binary form of our prediction (0 or 1 as opposed to 0 or 4) */
-  int confidence;      /* previous perceptron confidence */
+  long long confidence;      /* previous perceptron confidence */
   long long temp_history; /* temporary history register yielding prediction */
   int *perceptron; /* perceptron value yielding this prediction */
 
@@ -593,7 +600,8 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
     {
       // First index into the perceptron table
       int index;
-      int *perceptron,*weight,confidence;
+      int *perceptron,*weight;
+      long long confidence;
       index = PERCEPT_HASH(pred_dir,baddr);
       perceptron = &(pred_dir->config.percept.perceptrons[index*(pred_dir->config.percept.perceptron_len+1)]);
       //Get a pointer our weight of interest from the current perceptron
@@ -601,9 +609,9 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
       confidence = *weight;
       int i;
       for(i=1;i<=pred_dir->config.percept.perceptron_len;i++){
-        weight++; // Increment the poninter to the weight
+        weight++; // Increment the pointer to the weight
         // If we took that branch in the past add it to our confidence
-        if(pred_dir->config.percept.temp_history&1>>i)
+        if(pred_dir->config.percept.temp_history&1<<i)
           confidence += *weight;
         // Otherwise subtract it
         else
@@ -638,7 +646,6 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,  /* branch dir predictor inst */
     default:
       panic("bogus branch direction predictor class");
     }
-
   return (char *)p;
 }
 
@@ -715,6 +722,7 @@ bpred_lookup(struct bpred_t *pred,  /* branch predictor instance */
       bpred_dir_lookup (pred->dirpred.bimod, baddr);
   }
       break; 
+    case BPredGGH:
     case BPredPerceptron:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
   {
@@ -1019,14 +1027,14 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
 
   /* update state (but not for jumps) */
   if (dir_update_ptr->pdir1)
-    {
+  {
       if(pred->class == BPredPerceptron)
       {
         percept_update *update;
         update = (percept_update *) dir_update_ptr->pdir1;
         int i, *weight,  train;
         long long history;
-        train = 1;
+        train = 0;
 
         /* update history */
         pred->dirpred.perceptron->config.percept.committed_history <<= 1;
@@ -1039,20 +1047,20 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
         }
 
         /* if prediction was correct and within the theta threshold don't update */
-        if(update->confidence > THETA(pred->dirpred.perceptron->config.percept.perceptron_len && taken))
-          train = 0;
-        else if (update->confidence < -THETA(pred->dirpred.perceptron->config.percept.perceptron_len))
-          train = 0;
+        if((update->confidence <= THETA(pred->dirpred.perceptron->config.percept.perceptron_len)
+            &&update->confidence >= -THETA(pred->dirpred.perceptron->config.percept.perceptron_len))
+            ||(taken!=update->binary_prediction))
+          train = 1;
 
         if (train)
         {
           /*weight is pointer to the first weight value in the perceptron */
           weight = &update->perceptron[0];
-
+          //TODO Possible error here
           update->temp_history>>=1;
-          if(taken)
-            update->temp_history++;
+          update->temp_history+=taken;
           history = update->temp_history;
+          //TODO to here
 
           for (i=0; i < pred->dirpred.perceptron->config.percept.perceptron_len; i++)
           {
@@ -1070,10 +1078,9 @@ bpred_update(struct bpred_t *pred,  /* branch predictor instance */
             
           }
         }
-
       }
 
-      if (taken)
+  if (taken)
   {
     if (*dir_update_ptr->pdir1 < 3)
       ++*dir_update_ptr->pdir1;
