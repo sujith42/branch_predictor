@@ -128,6 +128,16 @@ static int comb_nelt = 1;
 static int comb_config[1] =
   { /* meta_table_size */1024 };
 
+/* perceptron default parameters */
+static int perceptron_nelt = 3;
+static int perceptron_config[3] = 
+  {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */};
+
+/* ggh default parameters */
+static int ggh_nelt = 4;
+static int ggh_config[4] = 
+  {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */, 4 /*number of GGH sets */};  
+  
 /* return address stack (RAS) size */
 static int ras_size = 8;
 
@@ -659,6 +669,14 @@ sim_reg_options(struct opt_odb_t *odb)
 		   bimod_config, bimod_nelt, &bimod_nelt,
 		   /* default */bimod_config,
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+		   
+  opt_reg_int_list(odb, "-bpred:perceptron",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>",
+          perceptron_config,perceptron_nelt,&perceptron_nelt,perceptron_config,TRUE,NULL,FALSE);
+
+  opt_reg_int_list(odb, "-bpred:ggh",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits> <# ggh sets>",
+          ggh_config,ggh_nelt,&ggh_nelt,ggh_config,TRUE,NULL,FALSE);
 
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
@@ -948,6 +966,22 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
 			  /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
 			  /* ret-addr stack size */ras_size);
+    }
+  else if (!mystricmp(pred_type,"perceptron"))
+    {
+      if(perceptron_nelt!=3)
+        fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+
+      pred = bpred_create(BPredPerceptron,0,perceptron_config[0],perceptron_config[1],0,
+        perceptron_config[2],0,btb_config[0],btb_config[1],ras_size);
+    }
+  else if (!mystricmp(pred_type,"ggh"))
+    {
+      if(ggh_nelt!=4)
+        fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+
+      pred = bpred_create(BPredGGH,0,ggh_config[0],ggh_config[1],0,
+        ggh_config[2],ggh_config[3],btb_config[0],btb_config[1],ras_size);
     }
   else if (!mystricmp(pred_type, "comb"))
     {

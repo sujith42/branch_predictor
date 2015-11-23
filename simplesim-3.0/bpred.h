@@ -133,6 +133,7 @@ struct bpred_dir_t {
 			int number_weight_bits; /* # bits for the weights */
 			unsigned long long history; /* history of operations */
 			int* perceptrons;	/* pointer to perceptron storage */
+			int num_ggh_sets;	/* the number of sets in the ggh */
 		} perceptron;
 		struct {
 			int l1size;		/* level-1 size, number of history regs */

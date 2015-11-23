@@ -116,8 +116,9 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
     break;
 
   case BPredPerceptron:
+  case BPredGGH:
     pred->dirpred.perceptron =
-      bpred_dir_create(class, l1size,l2size, shift_width, 0);
+      bpred_dir_create(class, l1size,l2size, shift_width, xor);
     break;
 
   default:
@@ -130,6 +131,7 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
   case BPredComb:
   case BPred2Level:
   case BPred2bit:
+  case BPredGGH:
     {
       int i;
 	
@@ -264,6 +266,11 @@ bpred_dir_create (
     /* no other state */
     break;
 
+  case BPredGGH:
+	if (!xor)
+	fatal("number of GGH sets, `%d', must be non-zero and positive",
+      xor);
+  pred_dir->config.perceptron.num_ggh_sets = xor;
   case BPredPerceptron:
     if (!l1size)
     fatal("# perceptrons, `%d', must be non-zero and positive",
@@ -321,7 +328,11 @@ bpred_dir_config(
     fprintf(stream, "pred_dir: %s: %d # perceptron bits, %d # perceptrons, %d # weight bits\n",
       name, pred_dir->config.perceptron.number_perceptron_bits, pred_dir->config.perceptron.perceptron_count, pred_dir->config.perceptron.number_weight_bits);
     break;
-
+ case BPredGGH:
+    fprintf(stream, "pred_dir: %s: %d # perceptron bits, %d # perceptrons, %d # weight bits, %d # ggh sets\n",
+      name, pred_dir->config.perceptron.number_perceptron_bits, pred_dir->config.perceptron.perceptron_count, pred_dir->config.perceptron.number_weight_bits,
+	  pred_dir->config.perceptron.num_ggh_sets);
+    break;
   case BPredTaken:
     fprintf(stream, "pred_dir: %s: predict taken\n", name);
     break;
@@ -373,6 +384,7 @@ bpred_config(struct bpred_t *pred,	/* branch predictor instance */
     break;
 
   case BPredPerceptron:
+  case BPredGGH:
   bpred_dir_config (pred->dirpred.perceptron, "perceptron", stream); 
     fprintf(stream, "btb: %d sets x %d associativity", 
       pred->btb.sets, pred->btb.assoc);
@@ -423,8 +435,9 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     case BPredPerceptron:
       name = "bpred_perceptron";
       break;
-    case BPredGGH:
-      name = "bpred_ggh";
+	case BPredGGH:
+	  name = "bpred_ggh";
+	  break;
     default:
       panic("bogus branch predictor class");
     }
@@ -600,6 +613,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     case BPredNotTaken:
       break;
     case BPredPerceptron:
+	case BPredGGH:
     {
       int index;
       index = PERCEPTRON_HASH(pred_dir, baddr);
@@ -637,7 +651,6 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     default:
       panic("bogus branch direction predictor class");
     }
-
   return (char *)p;
 }
 
@@ -715,6 +728,7 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
 	}
       break;
 	case BPredPerceptron:
+	case BPredGGH:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
 	{
 	  dir_update_ptr->pdir1 =
@@ -1019,13 +1033,35 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   /* update state (but not for jumps) */
   if (dir_update_ptr->pdir1)
     {	
-	  if(pred->class == BPredPerceptron)
+	  if(pred->class == BPredPerceptron || pred->class == BPredGGH)
 	  {
   	 	perceptron_update *update = (perceptron_update *) dir_update_ptr->pdir1;
   		int *weight;
   	  //update the history
-  		pred->dirpred.perceptron->config.perceptron.history<<=1;
-      pred->dirpred.perceptron->config.perceptron.history+=taken;
+		if (pred->class == BPredGGH) //TODO Check that this syntax is valid
+		  {
+			/* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
+			int num_sets;
+			num_sets = pred->dirpred.perceptron-> config.perceptron.num_ggh_sets;
+			int set; // index of the set we want
+			set = baddr & (num_sets-1); // gets the low order bits
+			// perceptron_len is the same length as the number of bits in our history
+			int set_length; // number of bits per set
+			set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
+			long long mask; // 0 for the bits we don't want in total history
+			mask = ((1 << set_length) - 1) << (set * set_length);
+			long long history_t; // just to make the next math cleaner
+			history_t = pred->dirpred.perceptron->config.perceptron.history;
+			// bit masking function! looks messy but should work
+			pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) & 
+			  (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
+		  }
+		  else
+		  {
+			pred->dirpred.perceptron->config.perceptron.history <<= 1;
+			pred->dirpred.perceptron->config.perceptron.history += taken;
+		  }
+	  
       //train
   		if((update->confidence <= THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)&& 
           update->confidence >= -THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits))||update->binary_prediction!=taken)
