@@ -58,6 +58,14 @@
 #include "misc.h"
 #include "machine.h"
 #include "bpred.h"
+/* Flag for whether to run test traces. All test traces will be assumed to be in a file named "test" 
+   in the same directory as the main program. Output will be written to "testOut" */
+ #define RUN_TEST_TRACES 0
+ FILE* in_fp;
+ FILE* out_fp;
+ char stringBuff[255];
+ int test_addr;
+ int test_result;
 
 /* Helper functions defined by the paper */
 #define MAX_WEIGHT(weight_bits)		((1<<((weight_bits)-1))-1)
@@ -198,6 +206,13 @@ bpred_dir_create (
   struct bpred_dir_t *pred_dir;
   unsigned int cnt;
   int flipflop;
+
+  /* If we're hacking in test cases, open the file here */
+  if(RUN_TEST_TRACES){
+    if(!(in_fp = fopen("./test","r"))){
+      fatal("could not open test trace");
+    }
+  }
 
   if (!(pred_dir = calloc(1, sizeof(struct bpred_dir_t))))
     fatal("out of virtual memory");
@@ -560,7 +575,6 @@ bpred_after_priming(struct bpred_t *bpred)
   int binary_prediction;  /* binary_prediction */
   int *perceptron; /* perceptron */
   int confidence;      /* perceptron confidence */
-  long long  history; /* history  */
 } perceptron_update;
 
 /* predicts a branch direction */
@@ -569,6 +583,21 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		 md_addr_t baddr)		/* branch address */
 {
   unsigned char *p = NULL;
+  /* Fetch our test traces if we're running a test. We're not doing
+     any validation so we're assuming test cases are correctly done. */
+  if(RUN_TEST_TRACES){
+    if(fscanf(in_fp,"%s",stringBuff)==EOF)
+      // Throw an error to end our test if we've finished it
+      fatal("End of Test");
+    test_addr = atoi(stringBuff);
+    fscanf(in_fp,"%s",stringBuff);
+    test_result = atoi(stringBuff);
+    fprintf(stderr,"Address: %d\n",test_addr);
+    fprintf(stderr,"Correct Prediction: %d\n",test_result);
+
+    //Hijack expected values
+    baddr = test_addr;
+  }
 
   /* Except for jumps, get a pointer to direction-binary_prediction bits */
   switch (pred_dir->class) {
@@ -620,30 +649,39 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
       int confidence;
       confidence = 0;
       int *weight;
-      long long  mask;
       int *perceptron;
 
       perceptron_update* update;
 
       if (!(update = calloc(sizeof(perceptron_update),1)))
         fatal("cannot make perceptron_update");
-      
+
       perceptron = &pred_dir->config.perceptron.perceptrons[index*(pred_dir->config.perceptron.number_perceptron_bits+1)];
       weight = &perceptron[0];
       confidence = *weight;
+
+      /* Print important testing information */
+      if(RUN_TEST_TRACES){
+        fprintf(stderr, "Perceptron Index: %d\n", index);
+        fprintf(stderr, "Old Perceptron: ");
+        fprintf(stderr, "%d,",confidence);
+      }
 
       int i;
       for (i=1; i<=pred_dir->config.perceptron.number_perceptron_bits; i++) 
       {
         weight++;
-        confidence += (pred_dir->config.perceptron.history & (1<<(i-1)))?*weight:-*weight;   
+        confidence += (pred_dir->config.perceptron.history & (1<<(i-1)))?*weight:-*weight; 
+        if(RUN_TEST_TRACES)
+          fprintf(stderr, "%d,",*weight); 
       }
+      if(RUN_TEST_TRACES)
+          fprintf(stderr, "\n");
       //Make the prediction
       update->confidence = confidence;
       update->binary_prediction = confidence >= 0;
       update->prediction = update->binary_prediction ? 4 : 0;
       update->perceptron = perceptron;
-      update->history = pred_dir->config.perceptron.history;
       //Do struct magic
       p = (char*)update;
     }
@@ -873,6 +911,14 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   struct bpred_btb_ent_t *lruhead = NULL, *lruitem = NULL;
   int index, i;
 
+  /* If we're hijacking, be sure to put in the correct values for inputs
+    based on our input file. */
+  if(RUN_TEST_TRACES){
+    taken = test_result;
+    correct = (taken!=0)==(pred_taken!=0);
+    baddr = test_addr;
+  }
+
   /* don't change bpred state for non-branch instructions or if this
    * is a stateless predictor*/
   if (!(MD_OP_FLAGS(op) & F_CTRL))
@@ -1037,31 +1083,16 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	  {
   	 	perceptron_update *update = (perceptron_update *) dir_update_ptr->pdir1;
   		int *weight;
-  	  //update the history
-		if (pred->class == BPredGGH) //TODO Check that this syntax is valid
-		  {
-			/* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
-			int num_sets;
-			num_sets = pred->dirpred.perceptron-> config.perceptron.num_ggh_sets;
-			int set; // index of the set we want
-			set = baddr & (num_sets-1); // gets the low order bits
-			// perceptron_len is the same length as the number of bits in our history
-			int set_length; // number of bits per set
-			set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
-			long long mask; // 0 for the bits we don't want in total history
-			mask = ((1 << set_length) - 1) << (set * set_length);
-			long long history_t; // just to make the next math cleaner
-			history_t = pred->dirpred.perceptron->config.perceptron.history;
-			// bit masking function! looks messy but should work
-			pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) & 
-			  (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
-		  }
-		  else
-		  {
-			pred->dirpred.perceptron->config.perceptron.history <<= 1;
-			pred->dirpred.perceptron->config.perceptron.history += taken;
-		  }
-	  
+	     /* Print important testing information */
+      if(RUN_TEST_TRACES){
+
+        fprintf(stderr, "Prediction Made: %d\n",update->binary_prediction);
+        fprintf(stderr, "Prediction Correct: %d\n",update->binary_prediction==taken);
+        fprintf(stderr, "Confidence: %d\n",update->confidence);
+        fprintf(stderr, "Theta: %d\n", THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits));
+        fprintf(stderr, "Updating Perceptron: %d\n",((update->confidence <= THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)&& 
+          update->confidence >= -THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits))||update->binary_prediction!=taken));
+      }
       //train
   		if((update->confidence <= THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)&& 
           update->confidence >= -THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits))||update->binary_prediction!=taken)
@@ -1076,11 +1107,14 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   			if (*weight < MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
   				MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
         int i;
+        if(RUN_TEST_TRACES)
+          fprintf(stderr,"New Perceptron: %d,",*weight);
+        
         //Update all the weights
   			for (i=0; i<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits; i++) 
    			{
           weight++;
-  				if (!!(update->history & (1<<i) ) == taken)
+  				if (!!(pred->dirpred.perceptron->config.perceptron.history & (1<<i) ) == taken)
   					(*weight)++;
   				else
   					(*weight)--;
@@ -1088,8 +1122,42 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
             MAX_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
           if (*weight < MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
             MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
+
+          if(RUN_TEST_TRACES)
+            fprintf(stderr,"%d,",*weight);
   			}
+
   		}
+     if(RUN_TEST_TRACES)
+            fprintf(stderr,"\n");
+        //update the history
+    if (pred->class == BPredGGH) //TODO Check that this syntax is valid
+      {
+      /* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
+      int num_sets;
+      num_sets = pred->dirpred.perceptron-> config.perceptron.num_ggh_sets;
+      int set; // index of the set we want
+      set = baddr & (num_sets-1); // gets the low order bits
+      // perceptron_len is the same length as the number of bits in our history
+      int set_length; // number of bits per set
+      set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
+      long long mask; // 0 for the bits we don't want in total history
+      mask = ((1 << set_length) - 1) << (set * set_length);
+      long long history_t; // just to make the next math cleaner
+      history_t = pred->dirpred.perceptron->config.perceptron.history;
+      // bit masking function! looks messy but should work
+      pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) & 
+        (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
+      }
+      else
+      {
+      pred->dirpred.perceptron->config.perceptron.history <<= 1;
+      pred->dirpred.perceptron->config.perceptron.history += taken;
+      }
+      if(RUN_TEST_TRACES){
+            fprintf(stderr, "New History: %lld\n",pred->dirpred.perceptron->config.perceptron.history);
+            fprintf(stderr,"\n\n\n");
+      }
 	  }
       if (taken)
 	  {
