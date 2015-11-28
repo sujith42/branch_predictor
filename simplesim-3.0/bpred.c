@@ -72,6 +72,15 @@
 #define MIN_WEIGHT(weight_bits)		(-((MAX_WEIGHT(weight_bits))+1))
 #define THETA(perceptron_bits)		((int) (1.93 * (perceptron_bits) + 14))
 
+/* constants for our perceptron victim buffer */
+#define VB_ON						0
+#define VB_NUM_ENTRIES				2
+#define VB_TAG_LENGTH				8
+// should get the VB_TAG_LENGTH number of low order bits from the address
+#define GET_TAG(ADDR)               ((ADDR) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH)
+
+int* vb, *vb_tags, *perceptrons_tags, *vb_LRU_meta;
+
 /* create a branch predictor */
 struct bpred_t *			/* branch predictory instance */
 bpred_create(enum bpred_class class,	/* type of predictor to create */
@@ -309,8 +318,21 @@ bpred_dir_create (
   // NOTE: WIDTH cannot be >32 with this assumption!!
   if (!(pred_dir->config.perceptron.perceptrons = calloc(l1size, sizeof(int)*(shift_width+1))))
     fatal("cannot malloc perceptron");
-    break;
 
+  if(VB_ON)
+  {
+	// note that number_perceptron_bits is actually number_perceptron_weights = weights per perceptron = shift_width
+	vb = calloc(VB_NUM_ENTRIES, sizeof(int)*(shift_width+1)); // VB_NUM_ENTRIES total perceptron entries, each with size number_perceptron_bits
+	vb_tags = (int*) malloc(sizeof(int)*VB_NUM_ENTRIES); // one entry of size int for each VB entry
+	vb_LRU_meta = (int*) malloc(sizeof(int)*VB_NUM_ENTRIES); // one entry of size int for each VB entry
+	perceptrons_tags = (int*) malloc(sizeof(int)*l1size); // one entry of size int for each entry in perceptrons table
+	if(!vb || !vb_tags || !perceptrons_tags || !vb_LRU_meta)
+	{
+	  fatal("cannot malloc victim buffer arrays");
+	}
+  }
+  break;
+  
 
   default:
     panic("bogus branch direction predictor class");
@@ -657,6 +679,74 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
         fatal("cannot make perceptron_update");
 
       perceptron = &pred_dir->config.perceptron.perceptrons[index*(pred_dir->config.perceptron.number_perceptron_bits+1)];
+	  
+	  /* Victim Buffer implementation */
+
+	  if(VB_ON)
+	  {
+		// check the tag for our current perceptron
+		int p_tag = perceptrons_tags[index];
+		
+		// check if this tag matches the tag of our current instruction
+		
+		if(p_tag != GET_TAG(baddr))
+		{
+		  //fprintf(stderr,"tag mismatch: p_tag: %d, baddr_tag: %d\n", p_tag, GET_TAG(baddr));
+		  // now we suppose that aliasing has occurred, so we search through the victim buffer for this actual tag
+		  int i, foundMatch;
+		  foundMatch = 0;
+
+		  for(i = 0; i < VB_NUM_ENTRIES; i++)
+		  {
+			//fprintf(stderr, "VB tag: [%d]:%d\n", i, vb_tags[i]);
+			if(vb_tags[i] == GET_TAG(baddr))
+			{
+			  //fprintf(stderr,"hit in the victim buffer! vb_tag: %d, baddr_tag: %d\n", vb_tags[i], GET_TAG(baddr));
+			  // tag match! swap out the VB entry perceptron with the current perceptron table entry (by swapping each weight)
+			  int j, temp;
+			  for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits; j++)
+			  {
+				temp = vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j];
+				vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
+				perceptron[j] = temp;
+			  }
+			  // set the tags
+			  vb_tags[i] = p_tag;
+			  perceptrons_tags[index] = GET_TAG(baddr);
+			  foundMatch = 1;
+			  vb_LRU_meta[i] = 0;
+			  break;
+			}
+		  }
+		  
+		  if(!foundMatch)
+		  {
+			// use the LRU meta structure to determine which entry to evict
+			int highest_index, val;
+			highest_index = 0;
+			val = vb_LRU_meta[0];
+			for(i = 0; i < VB_NUM_ENTRIES; i++)
+			{
+			  if(vb_LRU_meta[i] > val)
+			  {
+				val = vb_LRU_meta[i];
+				highest_index = i;
+			  }
+			}
+			
+			//evict the entry at highest_index, replace with our flushed weight data
+			int j;
+			for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits; j++)
+			{
+			  vb[highest_index*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
+			}
+			vb_tags[highest_index] = p_tag;
+			
+			perceptrons_tags[index] = GET_TAG(baddr);
+		  }
+		}
+	  }
+	  
       weight = &perceptron[0];
       confidence = *weight;
 
