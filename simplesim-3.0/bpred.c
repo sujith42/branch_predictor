@@ -60,7 +60,7 @@
 #include "bpred.h"
 /* Flag for whether to run test traces. All test traces will be assumed to be in a file named "test" 
    in the same directory as the main program. Output will be written to "testOut" */
- #define RUN_TEST_TRACES 0
+ #define RUN_TEST_TRACES 1
  FILE* in_fp;
  FILE* out_fp;
  char stringBuff[255];
@@ -1148,6 +1148,10 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       // bit masking function! looks messy but should work
       pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) & 
         (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
+      if(RUN_TEST_TRACES){
+        fprintf(stderr, "GGH Set Index: %d\n",update->binary_prediction);
+        fprintf(stderr, "Prediction Correct: %d\n",update->binary_prediction==taken);
+      }
       }
       else
       {
@@ -1155,7 +1159,8 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       pred->dirpred.perceptron->config.perceptron.history += taken;
       }
       if(RUN_TEST_TRACES){
-            fprintf(stderr, "New History: %lld\n",pred->dirpred.perceptron->config.perceptron.history);
+            fprintf(stderr, "New History: %lld\n",pred->dirpred.perceptron->config.perceptron.history&
+                ((1<<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)-1));
             fprintf(stderr,"\n\n\n");
       }
 	  }
