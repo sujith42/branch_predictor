@@ -73,9 +73,9 @@
 #define THETA(perceptron_bits)		((int) (1.93 * (perceptron_bits) + 14))
 
 /* constants for our perceptron victim buffer */
-#define VB_ON						0
+#define VB_ON						1
 #define VB_NUM_ENTRIES				2
-#define VB_TAG_LENGTH				8
+#define VB_TAG_LENGTH				4
 // should get the VB_TAG_LENGTH number of low order bits from the address
 #define GET_TAG(ADDR)               ((ADDR) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH)
 
@@ -322,10 +322,10 @@ bpred_dir_create (
   if(VB_ON)
   {
 	// note that number_perceptron_bits is actually number_perceptron_weights = weights per perceptron = shift_width
-	vb = calloc(VB_NUM_ENTRIES, sizeof(int)*(shift_width+1)); // VB_NUM_ENTRIES total perceptron entries, each with size number_perceptron_bits
-	vb_tags = (int*) malloc(sizeof(int)*VB_NUM_ENTRIES); // one entry of size int for each VB entry
-	vb_LRU_meta = (int*) malloc(sizeof(int)*VB_NUM_ENTRIES); // one entry of size int for each VB entry
-	perceptrons_tags = (int*) malloc(sizeof(int)*l1size); // one entry of size int for each entry in perceptrons table
+	vb = (int*) calloc(VB_NUM_ENTRIES, sizeof(int)*(shift_width+1)); // VB_NUM_ENTRIES total perceptron entries, each with size number_perceptron_bits
+	vb_tags = (int*) calloc(VB_NUM_ENTRIES,sizeof(int)); // one entry of size int for each VB entry
+	vb_LRU_meta = (int*) calloc(VB_NUM_ENTRIES,sizeof(int)); // one entry of size int for each VB entry
+	perceptrons_tags = (int*) calloc(l1size,sizeof(int)); // one entry of size int for each entry in perceptrons table
 	if(!vb || !vb_tags || !perceptrons_tags || !vb_LRU_meta)
 	{
 	  fatal("cannot malloc victim buffer arrays");
@@ -688,14 +688,18 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		int p_tag = perceptrons_tags[index];
 		
 		// check if this tag matches the tag of our current instruction
-		
+    if(RUN_TEST_TRACES){
+      int tag = GET_TAG(baddr);
+		  fprintf(stderr,"Item Tag: %d Perceptron Table Entry Tag: %d\n", tag,p_tag);
+    }
 		if(p_tag != GET_TAG(baddr))
 		{
+      if(RUN_TEST_TRACES)
+        fprintf(stderr, "Item not found in perceptron table\n");
 		  //fprintf(stderr,"tag mismatch: p_tag: %d, baddr_tag: %d\n", p_tag, GET_TAG(baddr));
 		  // now we suppose that aliasing has occurred, so we search through the victim buffer for this actual tag
 		  int i, foundMatch;
 		  foundMatch = 0;
-
 		  for(i = 0; i < VB_NUM_ENTRIES; i++)
 		  {
 			//fprintf(stderr, "VB tag: [%d]:%d\n", i, vb_tags[i]);
@@ -704,7 +708,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			  //fprintf(stderr,"hit in the victim buffer! vb_tag: %d, baddr_tag: %d\n", vb_tags[i], GET_TAG(baddr));
 			  // tag match! swap out the VB entry perceptron with the current perceptron table entry (by swapping each weight)
 			  int j, temp;
-			  for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits; j++)
+			  for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits+1; j++)
 			  {
 				temp = vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j];
 				vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
@@ -718,6 +722,9 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			  break;
 			}
 		  }
+      if(RUN_TEST_TRACES)
+        fprintf(stderr, "Item found in victim buffer: %d\n", foundMatch);
+
 		  
 		  if(!foundMatch)
 		  {
@@ -733,10 +740,12 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 				highest_index = i;
 			  }
 			}
+      if(RUN_TEST_TRACES)
+        fprintf(stderr, "Replacing item at index: %d\n", highest_index);
 			
 			//evict the entry at highest_index, replace with our flushed weight data
 			int j;
-			for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits; j++)
+			for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits+1; j++)
 			{
 			  vb[highest_index*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
 			}
@@ -745,6 +754,17 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			perceptrons_tags[index] = GET_TAG(baddr);
 		  }
 		}
+    else{
+      if(RUN_TEST_TRACES){
+        fprintf(stderr, "Item found in perceptron table\n");
+      }
+    }
+      int i;
+      //Increment the ages
+      for(i = 0; i < VB_NUM_ENTRIES; i++)
+      {
+        vb_LRU_meta[i]++;
+      }
 	  }
 	  
       weight = &perceptron[0];
@@ -1236,11 +1256,10 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       long long history_t; // just to make the next math cleaner
       history_t = pred->dirpred.perceptron->config.perceptron.history;
       // bit masking function! looks messy but should work
-      pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) & 
+      pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) |
         (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
       if(RUN_TEST_TRACES){
-        fprintf(stderr, "GGH Set Index: %d\n",update->binary_prediction);
-        fprintf(stderr, "Prediction Correct: %d\n",update->binary_prediction==taken);
+        fprintf(stderr, "GGH Set Index: %d\n",set);
       }
       }
       else
