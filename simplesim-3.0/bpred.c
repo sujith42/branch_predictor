@@ -60,7 +60,7 @@
 #include "bpred.h"
 /* Flag for whether to run test traces. All test traces will be assumed to be in a file named "test" 
    in the same directory as the main program. Output will be written to "testOut" */
- #define RUN_TEST_TRACES 1
+ #define RUN_TEST_TRACES 0
  FILE* in_fp;
  FILE* out_fp;
  char stringBuff[255];
@@ -73,7 +73,7 @@
 #define THETA(perceptron_bits)		((int) (1.93 * (perceptron_bits) + 14))
 
 /* constants for our perceptron victim buffer */
-#define VB_ON						1
+#define VB_ON						0
 #define VB_NUM_ENTRIES				2
 #define VB_TAG_LENGTH				4
 // should get the VB_TAG_LENGTH number of low order bits from the address
@@ -684,6 +684,12 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 
 	  if(VB_ON)
 	  {
+      int i;
+      //Increment the ages
+      for(i = 0; i < VB_NUM_ENTRIES; i++)
+      {
+        vb_LRU_meta[i]++;
+      }
 		// check the tag for our current perceptron
 		int p_tag = perceptrons_tags[index];
 		
@@ -734,6 +740,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			val = vb_LRU_meta[0];
 			for(i = 0; i < VB_NUM_ENTRIES; i++)
 			{
+        fprintf(stderr, "Item at vb index %d has age %d\n", i, vb_LRU_meta[i]);
 			  if(vb_LRU_meta[i] > val)
 			  {
 				val = vb_LRU_meta[i];
@@ -750,6 +757,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			  vb[highest_index*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
 			}
 			vb_tags[highest_index] = p_tag;
+      vb_LRU_meta[highest_index] = 0;
 			
 			perceptrons_tags[index] = GET_TAG(baddr);
 		  }
@@ -759,12 +767,6 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
         fprintf(stderr, "Item found in perceptron table\n");
       }
     }
-      int i;
-      //Increment the ages
-      for(i = 0; i < VB_NUM_ENTRIES; i++)
-      {
-        vb_LRU_meta[i]++;
-      }
 	  }
 	  
       weight = &perceptron[0];
