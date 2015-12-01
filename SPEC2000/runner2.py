@@ -129,8 +129,7 @@ for test in data["Params"]:
         num_perceptrons = ((test['Size']-test_str[3])/((test_str[3]+1)*test_str[2]+test_str[6])-test_str[5])
         if num_perceptrons<=0:
             num_perceptrons = 1
-        test_strings[index] = test_str[0:1]+(num_perceptrons,)+test_str[2:]
-        test_strings[index] = (test_str[0].replace("-1","{}".format(num_perceptrons)),)+test_str[1:] 
+        test_strings[index] = (test_str[0].replace("-1","{}".format(num_perceptrons)),)+(num_perceptrons,)+test_str[2:] 
     # Navigate to the spec2000 args folder then execute our benchmarks. This assumes we're in the SPEC2000 main folder
     num_tests=len(test_strings)*len(benchmarks)
     current_test=1
@@ -153,7 +152,7 @@ for test in data["Params"]:
             index=0
             for arg in args:
                 for arg_name in arg:
-                    sh.write(currentRow,currentCol,test_string[index+1])
+                    sh.write(currentRow,currentCol,("{}".format((test_string[index+1]))).replace("-1","{}".format(test_string[1])))
                     currentCol+=1
                     index+=1
             num_branches_seen = 0
