@@ -72,12 +72,19 @@
 #define MIN_WEIGHT(weight_bits)		(-((MAX_WEIGHT(weight_bits))+1))
 #define THETA(perceptron_bits)		((int) (1.93 * (perceptron_bits) + 14))
 
-/* constants for our perceptron victim buffer */
+/* constants for our perceptron victim buffer 
 #define VB_ON						0
 #define VB_NUM_ENTRIES				2
 #define VB_TAG_LENGTH				4
 // should get the VB_TAG_LENGTH number of low order bits from the address
-#define GET_TAG(ADDR)               ((ADDR) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH)
+#define GET_TAG(ADDR)               ((ADDR) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH)*/
+
+int VB_ON, VB_NUM_ENTRIES, VB_TAG_LENGTH;
+
+int GET_TAG(int addr)
+{
+	return ((addr) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH);
+}
 
 int* vb, *vb_tags, *perceptrons_tags, *vb_LRU_meta;
 
@@ -92,7 +99,10 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int xor,  	/* history xor address flag */
 	     unsigned int btb_sets,	/* number of sets in BTB */ 
 	     unsigned int btb_assoc,	/* BTB associativity */
-	     unsigned int retstack_size) /* num entries in ret-addr stack */
+	     unsigned int retstack_size, /* num entries in ret-addr stack */
+		 unsigned int vb_on,	/* 1 if victim buffer for perceptron on */
+		 unsigned int vb_num_entries,	/* number of entries in the vb */
+		 unsigned int vb_tag_bits)	/* number of tag bits in perceptrons */
 {
   struct bpred_t *pred;
 
@@ -134,6 +144,9 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 
   case BPredPerceptron:
   case BPredGGH:
+	VB_ON = vb_on;
+	VB_NUM_ENTRIES = vb_num_entries;
+	VB_TAG_LENGTH = vb_tag_bits;
     pred->dirpred.perceptron =
       bpred_dir_create(class, l1size,l2size, shift_width, xor);
     break;
@@ -740,7 +753,8 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 			val = vb_LRU_meta[0];
 			for(i = 0; i < VB_NUM_ENTRIES; i++)
 			{
-        fprintf(stderr, "Item at vb index %d has age %d\n", i, vb_LRU_meta[i]);
+			  if(RUN_TEST_TRACES)
+				fprintf(stderr, "Item at vb index %d has age %d\n", i, vb_LRU_meta[i]);
 			  if(vb_LRU_meta[i] > val)
 			  {
 				val = vb_LRU_meta[i];

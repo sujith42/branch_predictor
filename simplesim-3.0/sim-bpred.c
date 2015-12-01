@@ -97,6 +97,11 @@ static int ggh_nelt = 4;
 static int ggh_config[4] = 
   {1024/* # perceptrons */,32/* # weight bits */,32 /* # perceptron bits */, 4 /*number of GGH sets */};
 
+/* vb default parameters */
+static int vb_nelt = 3;
+static int vb_config[3] = 
+  {0 /* vb_on */, 2 /* num vb entries */, 4 /* tag length */};
+  
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
 static int twolev_config[4] =
@@ -167,12 +172,16 @@ sim_reg_options(struct opt_odb_t *odb)
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
 
   opt_reg_int_list(odb, "-bpred:perceptron",
-        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>)",
           perceptron_config,perceptron_nelt,&perceptron_nelt,perceptron_config,TRUE,NULL,FALSE);
 
   opt_reg_int_list(odb, "-bpred:ggh",
-        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits> <# ggh sets>",
+        "perceptron predictor config (<# perceptrons>,<# weight bits>,<# perceptron bits>,<# ggh sets>)",
           ggh_config,ggh_nelt,&ggh_nelt,ggh_config,TRUE,NULL,FALSE);
+		  
+  opt_reg_int_list(odb, "-bpred:vb",
+        "perceptron victim buffer config (<vb on (0 or 1)>,<# vb entries>,<tag length>)",
+          vb_config,vb_nelt,&vb_nelt,vb_config,TRUE,NULL,FALSE);
 
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
@@ -206,12 +215,12 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
   if (!mystricmp(pred_type, "taken"))
     {
       /* static predictor, not taken */
-      pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
   else if (!mystricmp(pred_type, "nottaken"))
     {
       /* static predictor, taken */
-      pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
   else if (!mystricmp(pred_type, "bimod"))
     {
@@ -230,7 +239,10 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 			  /* history xor address */0,
 			  /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
+			  /* ret-addr stack size */ras_size,
+			  /* vb_on? */ 0,
+			  /* vb entries */ 0,
+			  /* vb tag bits */ 0);
     }
   else if (!mystricmp(pred_type, "2lev"))
     {
@@ -249,7 +261,10 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 			  /* history xor address */twolev_config[3],
 			  /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
+			  /* ret-addr stack size */ras_size,
+			  /* vb_on? */ 0,
+			  /* vb entries */ 0,
+			  /* vb tag bits */ 0);
     }
   else if (!mystricmp(pred_type,"perceptron"))
     {
@@ -257,15 +272,15 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
         fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
 
       pred = bpred_create(BPredPerceptron,0,perceptron_config[0],perceptron_config[1],0,
-        perceptron_config[2],0,btb_config[0],btb_config[1],ras_size);
+        perceptron_config[2],0,btb_config[0],btb_config[1],ras_size,vb_config[0],vb_config[1],vb_config[2]);
     }
   else if (!mystricmp(pred_type,"ggh"))
     {
       if(ggh_nelt!=4)
-        fatal("bad perceptron predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
+        fatal("bad perceptron ggh predictor config (<# perceptrons> <# meta bits> <# perceptron bits>)");
 
       pred = bpred_create(BPredGGH,0,ggh_config[0],ggh_config[1],0,
-        ggh_config[2],ggh_config[3],btb_config[0],btb_config[1],ras_size);
+        ggh_config[2],ggh_config[3],btb_config[0],btb_config[1],ras_size,vb_config[0],vb_config[1],vb_config[2]);
     }
   else if (!mystricmp(pred_type, "comb"))
     {
@@ -288,7 +303,10 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 			  /* history xor address */twolev_config[3],
 			  /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
+			  /* ret-addr stack size */ras_size,
+			  /* vb_on? */ 0,
+			  /* vb entries */ 0,
+			  /* vb tag bits */ 0);
     }
   else
     fatal("cannot parse predictor type `%s'", pred_type);

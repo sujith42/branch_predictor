@@ -202,15 +202,18 @@ struct bpred_update_t {
 /* create a branch predictor */
 struct bpred_t *			/* branch predictory instance */
 bpred_create(enum bpred_class class,	/* type of predictor to create */
-			 unsigned int bimod_size,	/* bimod table size */
-			 unsigned int l1size,	/* level-1 table size */
-			 unsigned int l2size,	/* level-2 table size */
-			 unsigned int meta_size,	/* meta predictor table size */
-			 unsigned int shift_width,	/* history register width */
-			 unsigned int xor,		/* history xor address flag */
-			 unsigned int btb_sets,	/* number of sets in BTB */ 
-			 unsigned int btb_assoc,	/* BTB associativity */
-			 unsigned int retstack_size);/* num entries in ret-addr stack */
+	     unsigned int bimod_size,	/* bimod table size */
+	     unsigned int l1size,	/* 2lev l1 table size */
+	     unsigned int l2size,	/* 2lev l2 table size */
+	     unsigned int meta_size,	/* meta table size */
+	     unsigned int shift_width,	/* history register width */
+	     unsigned int xor,  	/* history xor address flag */
+	     unsigned int btb_sets,	/* number of sets in BTB */ 
+	     unsigned int btb_assoc,	/* BTB associativity */
+	     unsigned int retstack_size, /* num entries in ret-addr stack */
+		 unsigned int vb_on,	/* 1 if victim buffer for perceptron on */
+		 unsigned int vb_num_entries,	/* number of entries in the vb */
+		 unsigned int vb_tag_bits);	/* number of tag bits in perceptrons */
 
 /* create a branch direction predictor */
 struct bpred_dir_t *		/* branch direction predictor instance */
