@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd ../simplesim-3.0/
-make
+make sim-bpred
 cd ../benchmarks
 cp ../simplesim-3.0/sim-bpred ./sim-bpred
 chmod +x sim-bpred
