@@ -1,0 +1,8 @@
+{
+    "OutputName":"Test1.xls",
+    "NumberIsns":500,
+    "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
+    "Params":[
+        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[15],"Num Weight Bits":[7,8],"Num History Bits":[32]}
+     ]
+}
