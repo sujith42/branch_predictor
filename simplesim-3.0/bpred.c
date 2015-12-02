@@ -797,7 +797,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
       for (i=1; i<=pred_dir->config.perceptron.number_perceptron_bits; i++) 
       {
         weight++;
-        confidence += (pred_dir->config.perceptron.history & (1<<(i-1)))?*weight:-*weight; 
+        confidence += (pred_dir->config.perceptron.history & (((long long)1)<<(i-1)))?*weight:-*weight; 
         if(RUN_TEST_TRACES)
           fprintf(stderr, "%d,",*weight); 
       }
@@ -1240,7 +1240,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   			for (i=0; i<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits; i++) 
    			{
           weight++;
-  				if (!!(pred->dirpred.perceptron->config.perceptron.history & (1<<i) ) == taken)
+  				if (((pred->dirpred.perceptron->config.perceptron.history & (((long long)1)<<i))>0) == taken)
   					(*weight)++;
   				else
   					(*weight)--;
@@ -1265,10 +1265,10 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       int set; // index of the set we want
       set = baddr & (num_sets-1); // gets the low order bits
       // perceptron_len is the same length as the number of bits in our history
-      int set_length; // number of bits per set
+      long long set_length; // number of bits per set
       set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
       long long mask; // 0 for the bits we don't want in total history
-      mask = ((1 << set_length) - 1) << (set * set_length);
+      mask = ((((long long)1) << set_length) - 1) << (set * set_length);
       long long history_t; // just to make the next math cleaner
       history_t = pred->dirpred.perceptron->config.perceptron.history;
       // bit masking function! looks messy but should work
