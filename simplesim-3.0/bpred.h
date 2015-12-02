@@ -131,7 +131,7 @@ struct bpred_dir_t {
 			int number_perceptron_bits; /* # bits for the perceptron */
 			int perceptron_count; /* # perceptrons */
 			int number_weight_bits; /* # bits for the weights */
-			unsigned long long history; /* history of operations */
+			__int128_t history; /* history of operations */
 			int* perceptrons;	/* pointer to perceptron storage */
 			int num_ggh_sets;	/* the number of sets in the ggh */
 		} perceptron;
@@ -282,7 +282,7 @@ void
 bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 			 md_addr_t baddr,		/* branch address */
 			 md_addr_t btarget,		/* resolved branch target */
-			 int taken,			/* non-zero if branch was taken */
+			 __int128_t taken,			/* non-zero if branch was taken */
 			 int pred_taken,		/* non-zero if branch was pred taken */
 			 int correct,		/* was earlier prediction correct? */
 			 enum md_opcode op,		/* opcode of instruction */

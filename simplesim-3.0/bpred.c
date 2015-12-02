@@ -748,16 +748,23 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		  if(!foundMatch)
 		  {
 			// use the LRU meta structure to determine which entry to evict
-			int highest_index, val;
+			int highest_index;
+      long long weight_sum,val;
 			highest_index = 0;
-			val = vb_LRU_meta[0];
+      val = 2146000000000;
 			for(i = 0; i < VB_NUM_ENTRIES; i++)
 			{
+        weight_sum=0;
+
 			  if(RUN_TEST_TRACES)
 				fprintf(stderr, "Item at vb index %d has age %d\n", i, vb_LRU_meta[i]);
-			  if(vb_LRU_meta[i] > val)
-			  {
-				val = vb_LRU_meta[i];
+        int k;
+        for(k=0;k<pred_dir->config.perceptron.number_perceptron_bits+1;k++){
+          weight_sum+=abs(vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1)+k]);
+        }
+			  if(weight_sum<val)
+        {
+				val = weight_sum;
 				highest_index = i;
 			  }
 			}
@@ -797,7 +804,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
       for (i=1; i<=pred_dir->config.perceptron.number_perceptron_bits; i++) 
       {
         weight++;
-        confidence += (pred_dir->config.perceptron.history & (((long long)1)<<(i-1)))?*weight:-*weight; 
+        confidence += (pred_dir->config.perceptron.history & (((__int128_t)1)<<(i-1)))?*weight:-*weight; 
         if(RUN_TEST_TRACES)
           fprintf(stderr, "%d,",*weight); 
       }
@@ -1027,7 +1034,7 @@ void
 bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	     md_addr_t baddr,		/* branch address */
 	     md_addr_t btarget,		/* resolved branch target */
-	     int taken,			/* non-zero if branch was taken */
+	     __int128_t taken,			/* non-zero if branch was taken */
 	     int pred_taken,		/* non-zero if branch was pred taken */
 	     int correct,		/* was earlier addr binary_prediction ok? */
 	     enum md_opcode op,		/* opcode of instruction */
@@ -1240,7 +1247,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   			for (i=0; i<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits; i++) 
    			{
           weight++;
-  				if (((pred->dirpred.perceptron->config.perceptron.history & (((long long)1)<<i))>0) == taken)
+  				if (((pred->dirpred.perceptron->config.perceptron.history & (((__int128_t)1)<<i))>0) == taken)
   					(*weight)++;
   				else
   					(*weight)--;
@@ -1260,22 +1267,22 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     if (pred->class == BPredGGH) //TODO Check that this syntax is valid
       {
       /* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
-      int num_sets;
+      __int128_t num_sets;
       num_sets = pred->dirpred.perceptron-> config.perceptron.num_ggh_sets;
-      int set; // index of the set we want
+      __int128_t set; // index of the set we want
       set = baddr & (num_sets-1); // gets the low order bits
       // perceptron_len is the same length as the number of bits in our history
-      long long set_length; // number of bits per set
+      __int128_t set_length; // number of bits per set
       set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
-      long long mask; // 0 for the bits we don't want in total history
-      mask = ((((long long)1) << set_length) - 1) << (set * set_length);
-      long long history_t; // just to make the next math cleaner
+      __int128_t mask; // 0 for the bits we don't want in total history
+      mask = ((((__int128_t)1) << set_length) - 1) << (set * set_length);
+      __int128_t history_t; // just to make the next math cleaner
       history_t = pred->dirpred.perceptron->config.perceptron.history;
       // bit masking function! looks messy but should work
       pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) |
         (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
       if(RUN_TEST_TRACES){
-        fprintf(stderr, "GGH Set Index: %d\n",set);
+        fprintf(stderr, "GGH Set Index: %lld\n",((long long)set));
       }
       }
       else
