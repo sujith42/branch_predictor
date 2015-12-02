@@ -1,0 +1,10 @@
+{
+    "OutputName":"Test1FF.xls",
+    "NumberIsns":500000000,
+    "IsnsFastForward":100000000,
+    "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
+    "Params":[
+        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[1024],"Num Weight Bits":[8],"Num History Bits":[128]}
+        ]
+
+}

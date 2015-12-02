@@ -1,7 +1,7 @@
 {
     "OutputName":"Test1FF.xls",
     "NumberIsns":500000000,
-    "IsnsFastForward":200000000,
+    "IsnsFastForward":100000000,
     "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
     "Params":[
         {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[17,70],"Num Weight Bits":[7],"Num History Bits":[32]},
@@ -12,10 +12,10 @@
         {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[15,61],"Num Weight Bits":[8],"Num History Bits":[32],"Num GGH Sets":[4,8,16]},
         {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[143,576],"Num Weight Bits":[7],"Num History Bits":[64],"Num GGH Sets":[4,8,16]},
         {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[125,504],"Num Weight Bits":[8],"Num History Bits":[64],"Num GGH Sets":[4,8,16]},
-        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[2270],"Num Weight Bits":[7],"Num History Bits":[32]},
-        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[1986],"Num Weight Bits":[8],"Num History Bits":[32]},
-        {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[2270],"Num Weight Bits":[7],"Num History Bits":[32],"Num GGH Sets":[4,8,16]},
-        {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[1986],"Num Weight Bits":[8],"Num History Bits":[32],"Num GGH Sets":[4,8,16]}   
+        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[1008],"Num Weight Bits":[8],"Num History Bits":[64]},
+        {"BPredName":"perceptron","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits"],"Num Perceptrons":[1008],"Num Weight Bits":[7],"Num History Bits":[64]},
+        {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[1008],"Num Weight Bits":[7],"Num History Bits":[64],"Num GGH Sets":[4,8,16]},
+        {"BPredName":"ggh","Arg Names":["Num Perceptrons","Num Weight Bits","Num History Bits","Num GGH Sets"],"Num Perceptrons":[1008],"Num Weight Bits":[8],"Num History Bits":[64],"Num GGH Sets":[4,8,16]}   
         ]
 
 }
