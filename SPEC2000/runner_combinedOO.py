@@ -54,8 +54,8 @@ for test in data["Params"]:
     sh.write(currentRow,currentCol,"Benchmark")
     currentCol+=1
     args = test['Arg Names']
-    for arg_name in args:
-        sh.write(currentRow,currentCol,arg_name)
+    for arg in args:
+        sh.write(currentRow,currentCol,arg)
         currentCol+=1
     result_first_col = currentCol
     sh.write(currentRow,currentCol,"Num Branches")
@@ -69,29 +69,20 @@ for test in data["Params"]:
     incrementRow()
     # Start the Quadruple for loop of testing goodness
     test_strings=[];
-    base_test_string="-bpred {} -bpred:{} ".format(test['BPredName'],test['BPredName'])
-    # This code assumes more than 1 argument for a given predictor... it should work then. Incoming messiness
-    # This code also assumes a maximum of 4 arguments
-    if len(args) > 0:
-        for arg0 in test[args[0]]:
-            if len(args) > 1:
-                for arg1 in test[args[1]]:
-                    if len(args) > 2:
-                        for arg2 in test[args[2]]:
-                            if len(args) > 3:
-                                for arg3 in test[args[3]]:
-                                    test_strings.append((base_test_string+"{} {} {} {}".format(arg0,arg1,arg2,arg3),arg0,arg1,arg2,arg3))
-                            else:
-                                test_strings.append((base_test_string+"{} {} {}".format(arg0,arg1,arg2),arg0,arg1,arg2))
-                    else:
-                        test_strings.append((base_test_string+"{} {}".format(arg0,arg1),arg0,arg1))
-            else:
-                test_strings.append((base_test_string+"{}".format(arg0),arg0))
+    for arg0 in test[args[0]]:
+        for arg1 in test[args[1]]:
+            for arg2 in test[args[2]]:
+                for arg3 in test[args[3]]:
+                    for arg4 in test[args[4]]:
+                        for arg5 in test[args[5]]:
+                            test_strings.append(("-bpred comb -bpred:bimod {} -bpred:2lev {} {} {} {} -bpred:comb {}".format(arg0,arg1,arg2,arg3,arg4,arg5),arg0,arg1,arg2,arg3,arg4,arg5))
     # Navigate to the spec2000 args folder then execute our benchmarks. This assumes we're in the SPEC2000 main folder
     num_tests=len(test_strings)*len(benchmarks)
     current_test=1
     for test_string in test_strings:
         for benchmark in benchmarks:
+            print("")
+            print("")
             print("On predictor {} of {} evaluating test {} of {}".format(current_predictor,num_predictors,current_test,num_tests))
             temp_command = 'cd spec2000args/{}; ./RUN{} ../../../simplesim-3.0/sim-outorder ../../spec2000binaries/{}00.peak.ev6 -fastfwd {} -max:inst {} {}'.format(benchmark,benchmark,benchmark,num_ff,num_isns,test_string[0])
             print("Running command: {}".format(temp_command))
@@ -104,10 +95,11 @@ for test in data["Params"]:
             currentCol+=1
             sh.write(currentRow,currentCol,benchmark)
             currentCol+=1
-            for index,arg_name in enumerate(args):
-                sh.write(currentRow,currentCol,test_string[index+1])
+            index=0
+            for arg in args:
+                sh.write(currentRow,currentCol,("{}".format((test_string[index+1]))))
                 currentCol+=1
-
+                index+=1
             num_branches_seen = 0
             num_branches_correct = 0
             hit_rate = 0
@@ -144,7 +136,6 @@ for test in data["Params"]:
 print('Saving output file...')
 book.save(os.path.join(os.getcwd(),output_name))
 print("Done!")
-
 
 
 
