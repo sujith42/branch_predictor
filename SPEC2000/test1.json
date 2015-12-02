@@ -1,5 +1,5 @@
 {
-    "OutputName":"Test2.xls",
+    "OutputName":"Test1.xls",
     "NumberIsns":500000000,
     "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
     "Params":[

@@ -1,0 +1,9 @@
+{
+    "OutputName":"Test3.xls",
+    "NumberIsns":500000000,
+    "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
+    "Params":[
+        {"BPredName":["perceptron","vb"],"Size":4096,"Arg Names":[["Num Perceptrons","Num Weight Bits","Num History Bits"],["Enabled","Num Entries","Num Tag Bits"]],"Num Perceptrons":[1024],"Num Weight Bits":[7,8],"Num History Bits":[32],"Enabled":[1],"Num Entries":[2048,100000],"Num Tag Bits":[4,8,16]}
+        ]
+
+}

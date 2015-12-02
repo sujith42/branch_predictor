@@ -1,0 +1,9 @@
+{
+    "OutputName":"Test4_512.xls",
+    "NumberIsns":500000000,
+    "Benchmarks":["gzip","gcc","mcf","crafty","vortex"],
+    "Params":[
+        {"BPredName":"comb","Arg Names":["bimod arg0","2lev arg0","2lev arg1", "2lev arg2","2lev arg3", "comb arg0"],"bimod arg0":[131072],"2lev arg0":[1],"2lev arg1":[65536],"2lev arg2":[30],"2lev arg3":[0],"comb arg0":[131072]}
+        ]
+
+}
