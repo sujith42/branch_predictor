@@ -279,8 +279,6 @@ sim_main(void)
     dlite_main(regs.regs_PC - sizeof(md_inst_t),
 	       regs.regs_PC, sim_num_insn, &regs, mem);
 
-//INIT above. As of right now, every iteration one isn
-    //Can put in for loop from 0-2... Must include initializations in for loop. Pull isn count above for. DO manual decoding of instructions. Pull decode to top then decode by hand.
   while (TRUE)
     {
       /* maintain $r0 semantics */
@@ -290,7 +288,7 @@ sim_main(void)
 #endif /* TARGET_ALPHA */
 
       /* get the next instruction to execute */
-      MD_FETCH_INST(inst, mem, regs.regs_PC); // TODO do this three times. mt_inst_t array. In for loop, set inst...
+      MD_FETCH_INST(inst, mem, regs.regs_PC);
 
       /* keep an instruction count */
       sim_num_insn++;
@@ -307,7 +305,6 @@ sim_main(void)
       /* execute the instruction */
       switch (op)
 	{
-    //Somewhere here, if address put in, put in Addr
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	case OP:							\
           SYMCAT(OP,_IMPL);						\
@@ -337,7 +334,7 @@ sim_main(void)
 	  /* fflush(stderr); */
 	}
 
-      if (MD_OP_FLAGS(op) & F_MEM) //TODO this is how to check flags...
+      if (MD_OP_FLAGS(op) & F_MEM)
 	{
 	  sim_num_refs++;
 	  if (MD_OP_FLAGS(op) & F_STORE)
@@ -348,10 +345,10 @@ sim_main(void)
       if (dlite_check_break(regs.regs_NPC,
 			    is_write ? ACCESS_WRITE : ACCESS_READ,
 			    addr, sim_num_insn, sim_num_insn))
-	dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem); //Debugger
-  //CHeck is NPC == currentPC+4 if 
+	dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem);
+
       /* go to the next instruction */
-      regs.regs_PC = regs.regs_NPC; // Know branch taken if next PC doesn't equal current+ isn size. If see this gets fucked up at top of for loop, Check here
+      regs.regs_PC = regs.regs_NPC;
       regs.regs_NPC += sizeof(md_inst_t);
 
       /* finish early? */

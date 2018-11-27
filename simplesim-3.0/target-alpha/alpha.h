@@ -270,15 +270,15 @@ extern enum md_fu_class md_op2fu[];
 extern char *md_fu2name[];
 
 /* instruction flags */
-#define F_ICOMP		0x00000001	/* integer computation */ //TODO these are important
+#define F_ICOMP		0x00000001	/* integer computation */
 #define F_FCOMP		0x00000002	/* FP computation */
 #define F_CTRL		0x00000004	/* control inst */
 #define F_UNCOND	0x00000008	/*   unconditional change */
 #define F_COND		0x00000010	/*   conditional change */
-#define F_MEM		0x00000020	/* memory access inst */ // All mem types have // before
-#define F_LOAD		0x00000040	/*   load inst */  //
-#define F_STORE		0x00000080	/*   store inst */  //
-#define F_DISP		0x00000100	/*   displaced (R+C) addr mode */ // this is end of memory types
+#define F_MEM		0x00000020	/* memory access inst */
+#define F_LOAD		0x00000040	/*   load inst */
+#define F_STORE		0x00000080	/*   store inst */
+#define F_DISP		0x00000100	/*   displaced (R+C) addr mode */
 #define F_RR		0x00000200	/*   R+R addr mode */
 #define F_DIRECT	0x00000400	/*   direct addressing mode */
 #define F_TRAP		0x00000800	/* traping inst */
@@ -289,19 +289,15 @@ extern char *md_fu2name[];
 #define F_FPCOND	0x00010000	/* FP conditional branch */
 #define F_IMM		0x00020000	/* instruction has immediate operand */
 
-//RB+SEXT(OFS) will pull out offset + sign extension and add to RB for sign extension // TODO
-//IF memory instruction, if F_DISP, do stuff, else panic...
-//E incriment instruction counter by 6
 /* enum md_opcode -> opcode flags, used by simulators */
-#define MD_OP_FLAGS(OP)		(md_op2flags[OP]) //TODO do this after. load. Compare to see types of isns
+#define MD_OP_FLAGS(OP)		(md_op2flags[OP])
 extern unsigned int md_op2flags[];
 
 
 /* integer register specifiers */
-// TODO Uses literal here, can't just rename
 #define RA		((inst >> 21) & 0x1f)		/* reg source #1 */
 #define RB		((inst >> 16) & 0x1f)		/* reg source #2 */
-#define RC		(inst & 0x1f)			/* reg dest */ //TODO use this to check if your destination equals 
+#define RC		(inst & 0x1f)			/* reg dest */
 
 /* returns 8-bit unsigned immediate field value */
 #define IMM		((qword_t)((inst >> 13) & 0xff))

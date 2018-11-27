@@ -58,35 +58,9 @@
 #include "misc.h"
 #include "machine.h"
 #include "bpred.h"
-/* Flag for whether to run test traces. All test traces will be assumed to be in a file named "test" 
-   in the same directory as the main program. Output will be written to "testOut" */
- #define RUN_TEST_TRACES 0
- FILE* in_fp;
- FILE* out_fp;
- char stringBuff[255];
- int test_addr;
- int test_result;
 
-/* Helper functions defined by the paper */
-#define MAX_WEIGHT(weight_bits)		((1<<((weight_bits)-1))-1)
-#define MIN_WEIGHT(weight_bits)		(-((MAX_WEIGHT(weight_bits))+1))
-#define THETA(perceptron_bits)		((int) (1.93 * (perceptron_bits) + 14))
-
-/* constants for our perceptron victim buffer 
-#define VB_ON						0
-#define VB_NUM_ENTRIES				2
-#define VB_TAG_LENGTH				4
-// should get the VB_TAG_LENGTH number of low order bits from the address
-#define GET_TAG(ADDR)               ((ADDR) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH)*/
-
-int VB_ON, VB_NUM_ENTRIES, VB_TAG_LENGTH;
-
-int GET_TAG(int addr)
-{
-	return ((addr) >> MD_BR_SHIFT) % (1<<VB_TAG_LENGTH);
-}
-
-int* vb, *vb_tags, *perceptrons_tags, *vb_LRU_meta;
+/* turn this on to enable the SimpleScalar 2.0 RAS bug */
+/* #define RAS_BUG_COMPATIBLE */
 
 /* create a branch predictor */
 struct bpred_t *			/* branch predictory instance */
@@ -99,10 +73,7 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int xor,  	/* history xor address flag */
 	     unsigned int btb_sets,	/* number of sets in BTB */ 
 	     unsigned int btb_assoc,	/* BTB associativity */
-	     unsigned int retstack_size, /* num entries in ret-addr stack */
-		 unsigned int vb_on,	/* 1 if victim buffer for perceptron on */
-		 unsigned int vb_num_entries,	/* number of entries in the vb */
-		 unsigned int vb_tag_bits)	/* number of tag bits in perceptrons */
+	     unsigned int retstack_size) /* num entries in ret-addr stack */
 {
   struct bpred_t *pred;
 
@@ -142,29 +113,18 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
     /* no other state */
     break;
 
-  case BPredPerceptron:
-  case BPredGGH:
-	VB_ON = vb_on;
-	VB_NUM_ENTRIES = vb_num_entries;
-	VB_TAG_LENGTH = vb_tag_bits;
-    pred->dirpred.perceptron =
-      bpred_dir_create(class, l1size,l2size, shift_width, xor);
-    break;
-
   default:
     panic("bogus predictor class");
   }
 
   /* allocate ret-addr stack */
   switch (class) {
-  case BPredPerceptron:
   case BPredComb:
   case BPred2Level:
   case BPred2bit:
-  case BPredGGH:
     {
       int i;
-	
+
       /* allocate BTB */
       if (!btb_sets || (btb_sets & (btb_sets-1)) != 0)
 	fatal("number of BTB sets must be non-zero and a power of two");
@@ -228,13 +188,6 @@ bpred_dir_create (
   struct bpred_dir_t *pred_dir;
   unsigned int cnt;
   int flipflop;
-
-  /* If we're hacking in test cases, open the file here */
-  if(RUN_TEST_TRACES){
-    if(!(in_fp = fopen("./test","r"))){
-      fatal("could not open test trace");
-    }
-  }
 
   if (!(pred_dir = calloc(1, sizeof(struct bpred_dir_t))))
     fatal("out of virtual memory");
@@ -303,50 +256,6 @@ bpred_dir_create (
     /* no other state */
     break;
 
-  case BPredGGH:
-	if (!xor)
-	fatal("number of GGH sets, `%d', must be non-zero and positive",
-      xor);
-  pred_dir->config.perceptron.num_ggh_sets = xor;
-  case BPredPerceptron:
-    if (!l1size)
-    fatal("# perceptrons, `%d', must be non-zero and positive",
-      l1size);
-  if (!l2size)
-    fatal("# weight bits, `%d', must be non-zero and positive",
-      l2size);
-  if (l2size>sizeof(int)<<3)
-    fatal("# weight bits, `%d', must be < %d",
-      l2size,sizeof(int)<<3);
-  if (!shift_width)
-    fatal("# perceptron bits, `%d', must be non-zero and positive",
-      shift_width);
-  
-  // Initialize history to = 0
-  pred_dir->config.perceptron.history = 0;
-  // Assign the rest of the perceptron bits to be 0
-  pred_dir->config.perceptron.perceptron_count = l1size;
-  pred_dir->config.perceptron.number_weight_bits = l2size;
-  pred_dir->config.perceptron.number_perceptron_bits = shift_width;
-  // NOTE: WIDTH cannot be >32 with this assumption!!
-  if (!(pred_dir->config.perceptron.perceptrons = calloc(l1size, sizeof(int)*(shift_width+1))))
-    fatal("cannot malloc perceptron");
-
-  if(VB_ON)
-  {
-	// note that number_perceptron_bits is actually number_perceptron_weights = weights per perceptron = shift_width
-	vb = (int*) calloc(VB_NUM_ENTRIES, sizeof(int)*(shift_width+1)); // VB_NUM_ENTRIES total perceptron entries, each with size number_perceptron_bits
-	vb_tags = (int*) calloc(VB_NUM_ENTRIES,sizeof(int)); // one entry of size int for each VB entry
-	vb_LRU_meta = (int*) calloc(VB_NUM_ENTRIES,sizeof(int)); // one entry of size int for each VB entry
-	perceptrons_tags = (int*) calloc(l1size,sizeof(int)); // one entry of size int for each entry in perceptrons table
-	if(!vb || !vb_tags || !perceptrons_tags || !vb_LRU_meta)
-	{
-	  fatal("cannot malloc victim buffer arrays");
-	}
-  }
-  break;
-  
-
   default:
     panic("bogus branch direction predictor class");
   }
@@ -359,11 +268,10 @@ void
 bpred_dir_config(
   struct bpred_dir_t *pred_dir,	/* branch direction predictor instance */
   char name[],			/* predictor name */
-  FILE *stream)			/* confidence stream */
+  FILE *stream)			/* output stream */
 {
   switch (pred_dir->class) {
-  case BPred2Level:
-    fprintf(stream,
+  case BPred2Level:(stream,
       "pred_dir: %s: 2-lvl: %d l1-sz, %d bits/ent, %s xor, %d l2-sz, direct-mapped\n",
       name, pred_dir->config.two.l1size, pred_dir->config.two.shift_width,
       pred_dir->config.two.xor ? "" : "no", pred_dir->config.two.l2size);
@@ -374,15 +282,6 @@ bpred_dir_config(
       name, pred_dir->config.bimod.size);
     break;
 
- case BPredPerceptron:
-    fprintf(stream, "pred_dir: %s: %d # perceptron bits, %d # perceptrons, %d # weight bits\n",
-      name, pred_dir->config.perceptron.number_perceptron_bits, pred_dir->config.perceptron.perceptron_count, pred_dir->config.perceptron.number_weight_bits);
-    break;
- case BPredGGH:
-    fprintf(stream, "pred_dir: %s: %d # perceptron bits, %d # perceptrons, %d # weight bits, %d # ggh sets\n",
-      name, pred_dir->config.perceptron.number_perceptron_bits, pred_dir->config.perceptron.perceptron_count, pred_dir->config.perceptron.number_weight_bits,
-	  pred_dir->config.perceptron.num_ggh_sets);
-    break;
   case BPredTaken:
     fprintf(stream, "pred_dir: %s: predict taken\n", name);
     break;
@@ -399,7 +298,7 @@ bpred_dir_config(
 /* print branch predictor configuration */
 void
 bpred_config(struct bpred_t *pred,	/* branch predictor instance */
-	     FILE *stream)		/* confidence stream */
+	     FILE *stream)		/* output stream */
 {
   switch (pred->class) {
   case BPredComb:
@@ -428,18 +327,9 @@ bpred_config(struct bpred_t *pred,	/* branch predictor instance */
   case BPredTaken:
     bpred_dir_config (pred->dirpred.bimod, "taken", stream);
     break;
-
   case BPredNotTaken:
     bpred_dir_config (pred->dirpred.bimod, "nottaken", stream);
     break;
-
-  case BPredPerceptron:
-  case BPredGGH:
-  bpred_dir_config (pred->dirpred.perceptron, "perceptron", stream); 
-    fprintf(stream, "btb: %d sets x %d associativity", 
-      pred->btb.sets, pred->btb.assoc);
-    fprintf(stream, "ret_stack: %d entries", pred->retstack.size);  
-  break;
 
   default:
     panic("bogus branch predictor class");
@@ -449,11 +339,11 @@ bpred_config(struct bpred_t *pred,	/* branch predictor instance */
 /* print predictor stats */
 void
 bpred_stats(struct bpred_t *pred,	/* branch predictor instance */
-	    FILE *stream)		/* confidence stream */
+	    FILE *stream)		/* output stream */
 {
-  fprintf(stream, "pred: addr-binary_prediction rate = %f\n",
+  fprintf(stream, "pred: addr-prediction rate = %f\n",
 	  (double)pred->addr_hits/(double)(pred->addr_hits+pred->misses));
-  fprintf(stream, "pred: dir-binary_prediction rate = %f\n",
+  fprintf(stream, "pred: dir-prediction rate = %f\n",
 	  (double)pred->dir_hits/(double)(pred->dir_hits+pred->misses));
 }
 
@@ -482,12 +372,6 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     case BPredNotTaken:
       name = "bpred_nottaken";
       break;
-    case BPredPerceptron:
-      name = "bpred_perceptron";
-      break;
-	case BPredGGH:
-	  name = "bpred_ggh";
-	  break;
     default:
       panic("bogus branch predictor class");
     }
@@ -510,11 +394,11 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     {
       sprintf(buf, "%s.used_bimod", name);
       stat_reg_counter(sdb, buf, 
-		       "total number of bimodal binary_predictions used", 
+		       "total number of bimodal predictions used", 
 		       &pred->used_bimod, 0, NULL);
       sprintf(buf, "%s.used_2lev", name);
       stat_reg_counter(sdb, buf, 
-		       "total number of 2-level binary_predictions used", 
+		       "total number of 2-level predictions used", 
 		       &pred->used_2lev, 0, NULL);
     }
   sprintf(buf, "%s.misses", name);
@@ -538,17 +422,17 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   sprintf(buf, "%s.bpred_addr_rate", name);
   sprintf(buf1, "%s.addr_hits / %s.updates", name, name);
   stat_reg_formula(sdb, buf,
-		   "branch address-binary_prediction rate (i.e., addr-hits/updates)",
+		   "branch address-prediction rate (i.e., addr-hits/updates)",
 		   buf1, "%9.4f");
   sprintf(buf, "%s.bpred_dir_rate", name);
   sprintf(buf1, "%s.dir_hits / %s.updates", name, name);
   stat_reg_formula(sdb, buf,
-		  "branch direction-binary_prediction rate (i.e., all-hits/updates)",
+		  "branch direction-prediction rate (i.e., all-hits/updates)",
 		  buf1, "%9.4f");
   sprintf(buf, "%s.bpred_jr_rate", name);
   sprintf(buf1, "%s.jr_hits / %s.jr_seen", name, name);
   stat_reg_formula(sdb, buf,
-		  "JR address-binary_prediction rate (i.e., JR addr-hits/JRs seen)",
+		  "JR address-prediction rate (i.e., JR addr-hits/JRs seen)",
 		  buf1, "%9.4f");
   sprintf(buf, "%s.bpred_jr_non_ras_rate.PP", name);
   sprintf(buf1, "%s.jr_non_ras_hits.PP / %s.jr_non_ras_seen.PP", name, name);
@@ -565,7 +449,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
 		   &pred->retstack_pops, 0, NULL);
   sprintf(buf, "%s.used_ras.PP", name);
   stat_reg_counter(sdb, buf,
-		   "total number of RAS binary_predictions used",
+		   "total number of RAS predictions used",
 		   &pred->used_ras, 0, NULL);
   sprintf(buf, "%s.ras_hits.PP", name);
   stat_reg_counter(sdb, buf,
@@ -574,7 +458,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   sprintf(buf, "%s.ras_rate.PP", name);
   sprintf(buf1, "%s.ras_hits.PP / %s.used_ras.PP", name, name);
   stat_reg_formula(sdb, buf,
-		   "RAS binary_prediction rate (i.e., RAS hits/used RAS)",
+		   "RAS prediction rate (i.e., RAS hits/used RAS)",
 		   buf1, "%9.4f");
 }
 
@@ -600,17 +484,7 @@ bpred_after_priming(struct bpred_t *bpred)
 
 #define BIMOD_HASH(PRED, ADDR)						\
   ((((ADDR) >> 19) ^ ((ADDR) >> MD_BR_SHIFT)) & ((PRED)->config.bimod.size-1))
-    /* was: ((baddr >> 16) ^ baddr) & (pred->dirpred.perceptron.size-1) */
-
-#define PERCEPTRON_HASH(PRED, ADDR)                                          \
-  ((((ADDR) >> 19) ^ ((ADDR) >> MD_BR_SHIFT)) & ((PRED)->config.perceptron.perceptron_count-1))
- 
- typedef struct {
-  char prediction; /* scaled prediction */
-  int binary_prediction;  /* binary_prediction */
-  int *perceptron; /* perceptron */
-  int confidence;      /* perceptron confidence */
-} perceptron_update;
+    /* was: ((baddr >> 16) ^ baddr) & (pred->dirpred.bimod.size-1) */
 
 /* predicts a branch direction */
 char *						/* pointer to counter */
@@ -618,23 +492,8 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		 md_addr_t baddr)		/* branch address */
 {
   unsigned char *p = NULL;
-  /* Fetch our test traces if we're running a test. We're not doing
-     any validation so we're assuming test cases are correctly done. */
-  if(RUN_TEST_TRACES){
-    if(fscanf(in_fp,"%s",stringBuff)==EOF)
-      // Throw an error to end our test if we've finished it
-      fatal("End of Test");
-    test_addr = atoi(stringBuff);
-    fscanf(in_fp,"%s",stringBuff);
-    test_result = atoi(stringBuff);
-    fprintf(stderr,"Address: %d\n",test_addr);
-    fprintf(stderr,"Correct Prediction: %d\n",test_result);
 
-    //Hijack expected values
-    baddr = test_addr;
-  }
-
-  /* Except for jumps, get a pointer to direction-binary_prediction bits */
+  /* Except for jumps, get a pointer to direction-prediction bits */
   switch (pred_dir->class) {
     case BPred2Level:
       {
@@ -666,7 +525,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 	  }
         l2index = l2index & (pred_dir->config.two.l2size - 1);
 
-        /* get a pointer to binary_prediction state information */
+        /* get a pointer to prediction state information */
         p = &pred_dir->config.two.l2table[l2index];
       }
       break;
@@ -676,159 +535,17 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     case BPredTaken:
     case BPredNotTaken:
       break;
-    case BPredPerceptron:
-	case BPredGGH:
-    {
-      int index;
-      index = PERCEPTRON_HASH(pred_dir, baddr);
-      int confidence;
-      confidence = 0;
-      int *weight;
-      int *perceptron;
-
-      perceptron_update* update;
-
-      if (!(update = calloc(sizeof(perceptron_update),1)))
-        fatal("cannot make perceptron_update");
-
-      perceptron = &pred_dir->config.perceptron.perceptrons[index*(pred_dir->config.perceptron.number_perceptron_bits+1)];
-	  
-	  /* Victim Buffer implementation */
-
-	  if(VB_ON)
-	  {
-      int i;
-      //Increment the ages
-      for(i = 0; i < VB_NUM_ENTRIES; i++)
-      {
-        vb_LRU_meta[i]++;
-      }
-		// check the tag for our current perceptron
-		int p_tag = perceptrons_tags[index];
-		
-		// check if this tag matches the tag of our current instruction
-    if(RUN_TEST_TRACES){
-      int tag = GET_TAG(baddr);
-		  fprintf(stderr,"Item Tag: %d Perceptron Table Entry Tag: %d\n", tag,p_tag);
-    }
-		if(p_tag != GET_TAG(baddr))
-		{
-      if(RUN_TEST_TRACES)
-        fprintf(stderr, "Item not found in perceptron table\n");
-		  //fprintf(stderr,"tag mismatch: p_tag: %d, baddr_tag: %d\n", p_tag, GET_TAG(baddr));
-		  // now we suppose that aliasing has occurred, so we search through the victim buffer for this actual tag
-		  int i, foundMatch;
-		  foundMatch = 0;
-		  for(i = 0; i < VB_NUM_ENTRIES; i++)
-		  {
-			//fprintf(stderr, "VB tag: [%d]:%d\n", i, vb_tags[i]);
-			if(vb_tags[i] == GET_TAG(baddr))
-			{
-			  //fprintf(stderr,"hit in the victim buffer! vb_tag: %d, baddr_tag: %d\n", vb_tags[i], GET_TAG(baddr));
-			  // tag match! swap out the VB entry perceptron with the current perceptron table entry (by swapping each weight)
-			  int j, temp;
-			  for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits+1; j++)
-			  {
-				temp = vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j];
-				vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
-				perceptron[j] = temp;
-			  }
-			  // set the tags
-			  vb_tags[i] = p_tag;
-			  perceptrons_tags[index] = GET_TAG(baddr);
-			  foundMatch = 1;
-			  vb_LRU_meta[i] = 0;
-			  break;
-			}
-		  }
-      if(RUN_TEST_TRACES)
-        fprintf(stderr, "Item found in victim buffer: %d\n", foundMatch);
-
-		  
-		  if(!foundMatch)
-		  {
-			// use the LRU meta structure to determine which entry to evict
-			int highest_index;
-      long long weight_sum,val;
-			highest_index = 0;
-      val = 2146000000000;
-			for(i = 0; i < VB_NUM_ENTRIES; i++)
-			{
-        weight_sum=0;
-
-			  if(RUN_TEST_TRACES)
-				fprintf(stderr, "Item at vb index %d has age %d\n", i, vb_LRU_meta[i]);
-        int k;
-        for(k=0;k<pred_dir->config.perceptron.number_perceptron_bits+1;k++){
-          weight_sum+=abs(vb[i*(pred_dir->config.perceptron.number_perceptron_bits+1)+k]);
-        }
-			  if(weight_sum<val)
-        {
-				val = weight_sum;
-				highest_index = i;
-			  }
-			}
-      if(RUN_TEST_TRACES)
-        fprintf(stderr, "Replacing item at index: %d\n", highest_index);
-			
-			//evict the entry at highest_index, replace with our flushed weight data
-			int j;
-			for(j = 0; j< pred_dir->config.perceptron.number_perceptron_bits+1; j++)
-			{
-			  vb[highest_index*(pred_dir->config.perceptron.number_perceptron_bits+1) + j] = perceptron[j];
-			}
-			vb_tags[highest_index] = p_tag;
-      vb_LRU_meta[highest_index] = 0;
-			
-			perceptrons_tags[index] = GET_TAG(baddr);
-		  }
-		}
-    else{
-      if(RUN_TEST_TRACES){
-        fprintf(stderr, "Item found in perceptron table\n");
-      }
-    }
-	  }
-	  
-      weight = &perceptron[0];
-      confidence = *weight;
-
-      /* Print important testing information */
-      if(RUN_TEST_TRACES){
-        fprintf(stderr, "Perceptron Index: %d\n", index);
-        fprintf(stderr, "Old Perceptron: ");
-        fprintf(stderr, "%d,",confidence);
-      }
-
-      int i;
-      for (i=1; i<=pred_dir->config.perceptron.number_perceptron_bits; i++) 
-      {
-        weight++;
-        confidence += (pred_dir->config.perceptron.history & (((__int128_t)1)<<(i-1)))?*weight:-*weight; 
-        if(RUN_TEST_TRACES)
-          fprintf(stderr, "%d,",*weight); 
-      }
-      if(RUN_TEST_TRACES)
-          fprintf(stderr, "\n");
-      //Make the prediction
-      update->confidence = confidence;
-      update->binary_prediction = confidence >= 0;
-      update->prediction = update->binary_prediction ? 4 : 0;
-      update->perceptron = perceptron;
-      //Do struct magic
-      p = (char*)update;
-    }
-    break;
     default:
       panic("bogus branch direction predictor class");
     }
+
   return (char *)p;
 }
 
 /* probe a predictor for a next fetch address, the predictor is probed
    with branch address BADDR, the branch target is BTARGET (used for
    static predictors), and OP is the instruction opcode (used to simulate
-   predecode bits; a pointer to the predictor state perceptron (or null for jumps)
+   predecode bits; a pointer to the predictor state entry (or null for jumps)
    is returned in *DIR_UPDATE_PTR (used for updating predictor state),
    and the non-speculative top-of-stack is returned in stack_recover_idx 
    (used for recovering ret-addr stack after mis-predict).  */
@@ -859,7 +576,7 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
   dir_update_ptr->pdir1 = NULL;
   dir_update_ptr->pdir2 = NULL;
   dir_update_ptr->pmeta = NULL;
-  /* Except for jumps, get a pointer to direction-binary_prediction bits */
+  /* Except for jumps, get a pointer to direction-prediction bits */
   switch (pred->class) {
     case BPredComb:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
@@ -896,14 +613,6 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
 	{
 	  dir_update_ptr->pdir1 =
 	    bpred_dir_lookup (pred->dirpred.bimod, baddr);
-	}
-      break;
-	case BPredPerceptron:
-	case BPredGGH:
-      if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
-	{
-	  dir_update_ptr->pdir1 =
-	    bpred_dir_lookup (pred->dirpred.perceptron, baddr);
 	}
       break;
     case BPredTaken:
@@ -1023,34 +732,26 @@ bpred_recover(struct bpred_t *pred,	/* branch predictor instance */
 }
 
 /* update the branch predictor, only useful for stateful predictors; updates
-   perceptron for instruction type OP at address BADDR.  BTB only gets updated
+   entry for instruction type OP at address BADDR.  BTB only gets updated
    for branches which are taken.  Inst was determined to jump to
    address BTARGET and was taken if TAKEN is non-zero.  Predictor 
-   statistics are updated with result of binary_prediction, indicated by CORRECT and 
+   statistics are updated with result of prediction, indicated by CORRECT and 
    PRED_TAKEN, predictor state to be updated is indicated by *DIR_UPDATE_PTR 
    (may be NULL for jumps, which shouldn't modify state bits).  Note if
-   bpred_update is done speculatively, branch-binary_prediction may get polluted. */
+   bpred_update is done speculatively, branch-prediction may get polluted. */
 void
 bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	     md_addr_t baddr,		/* branch address */
 	     md_addr_t btarget,		/* resolved branch target */
-	     __int128_t taken,			/* non-zero if branch was taken */
+	     int taken,			/* non-zero if branch was taken */
 	     int pred_taken,		/* non-zero if branch was pred taken */
-	     int correct,		/* was earlier addr binary_prediction ok? */
+	     int correct,		/* was earlier addr prediction ok? */
 	     enum md_opcode op,		/* opcode of instruction */
 	     struct bpred_update_t *dir_update_ptr)/* pred state pointer */
 {
   struct bpred_btb_ent_t *pbtb = NULL;
   struct bpred_btb_ent_t *lruhead = NULL, *lruitem = NULL;
   int index, i;
-
-  /* If we're hijacking, be sure to put in the correct values for inputs
-    based on our input file. */
-  if(RUN_TEST_TRACES){
-    taken = test_result;
-    correct = (taken!=0)==(pred_taken!=0);
-    baddr = test_addr;
-  }
 
   /* don't change bpred state for non-branch instructions or if this
    * is a stateless predictor*/
@@ -1138,7 +839,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	shift_reg & ((1 << pred->dirpred.twolev->config.two.shift_width) - 1);
     }
 
-  /* find BTB perceptron if it's a taken branch (don't allocate for non-taken) */
+  /* find BTB entry if it's a taken branch (don't allocate for non-taken) */
   if (taken)
     {
       index = (baddr >> MD_BR_SHIFT) & (pred->btb.sets - 1);
@@ -1178,19 +879,19 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	  if (!pbtb)
 	    /* missed in BTB; choose the LRU item in this set as the victim */
 	    pbtb = lruitem;	
-	  /* else hit, and pbtb points to matching BTB perceptron */
+	  /* else hit, and pbtb points to matching BTB entry */
 	  
 	  /* Update LRU state: selected item, whether selected because it
 	   * matched or because it was LRU and selected as a victim, becomes 
 	   * MRU */
 	  if (pbtb != lruhead)
 	    {
-	      /* this splices out the matched perceptron... */
+	      /* this splices out the matched entry... */
 	      if (pbtb->prev)
 		pbtb->prev->next = pbtb->next;
 	      if (pbtb->next)
 		pbtb->next->prev = pbtb->prev;
-	      /* ...and this puts the matched perceptron at the head of the list */
+	      /* ...and this puts the matched entry at the head of the list */
 	      pbtb->next = lruhead;
 	      pbtb->prev = NULL;
 	      lruhead->prev = pbtb;
@@ -1204,107 +905,24 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }
       
   /* 
-   * Now 'p' is a possibly null pointer into the direction binary_prediction table, 
+   * Now 'p' is a possibly null pointer into the direction prediction table, 
    * and 'pbtb' is a possibly null pointer into the BTB (either to a 
-   * matched-on perceptron or a victim which was LRU in its set)
+   * matched-on entry or a victim which was LRU in its set)
    */
 
   /* update state (but not for jumps) */
   if (dir_update_ptr->pdir1)
-    {	
-	  if(pred->class == BPredPerceptron || pred->class == BPredGGH)
-	  {
-  	 	perceptron_update *update = (perceptron_update *) dir_update_ptr->pdir1;
-  		int *weight;
-	     /* Print important testing information */
-      if(RUN_TEST_TRACES){
-
-        fprintf(stderr, "Prediction Made: %d\n",update->binary_prediction);
-        fprintf(stderr, "Prediction Correct: %d\n",update->binary_prediction==taken);
-        fprintf(stderr, "Confidence: %d\n",update->confidence);
-        fprintf(stderr, "Theta: %d\n", THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits));
-        fprintf(stderr, "Updating Perceptron: %d\n",((update->confidence <= THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)&& 
-          update->confidence >= -THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits))||update->binary_prediction!=taken));
-      }
-      //train
-  		if((update->confidence <= THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)&& 
-          update->confidence >= -THETA(pred->dirpred.perceptron->config.perceptron.number_perceptron_bits))||update->binary_prediction!=taken)
-  		{
-  			weight = &update->perceptron[0];
-  			if (taken)
-  				(*weight)++;
-  			else
-  				(*weight)--;
-  			if (*weight > MAX_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
-  				MAX_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
-  			if (*weight < MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
-  				MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
-        int i;
-        if(RUN_TEST_TRACES)
-          fprintf(stderr,"New Perceptron: %d,",*weight);
-        
-        //Update all the weights
-  			for (i=0; i<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits; i++) 
-   			{
-          weight++;
-  				if (((pred->dirpred.perceptron->config.perceptron.history & (((__int128_t)1)<<i))>0) == taken)
-  					(*weight)++;
-  				else
-  					(*weight)--;
-          if (*weight > MAX_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
-            MAX_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
-          if (*weight < MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits)) *weight = 
-            MIN_WEIGHT(pred->dirpred.perceptron->config.perceptron.number_weight_bits);
-
-          if(RUN_TEST_TRACES)
-            fprintf(stderr,"%d,",*weight);
-  			}
-
-  		}
-     if(RUN_TEST_TRACES)
-            fprintf(stderr,"\n");
-        //update the history
-    if (pred->class == BPredGGH) //TODO Check that this syntax is valid
-      {
-      /* in GGH, the history table is broken up into several ways, indexed by the low order bits of our instruction */
-      __int128_t num_sets;
-      num_sets = pred->dirpred.perceptron-> config.perceptron.num_ggh_sets;
-      __int128_t set; // index of the set we want
-      set = baddr & (num_sets-1); // gets the low order bits
-      // perceptron_len is the same length as the number of bits in our history
-      __int128_t set_length; // number of bits per set
-      set_length = pred->dirpred.perceptron-> config.perceptron.number_perceptron_bits / num_sets;
-      __int128_t mask; // 0 for the bits we don't want in total history
-      mask = ((((__int128_t)1) << set_length) - 1) << (set * set_length);
-      __int128_t history_t; // just to make the next math cleaner
-      history_t = pred->dirpred.perceptron->config.perceptron.history;
-      // bit masking function! looks messy but should work
-      pred->dirpred.perceptron->config.perceptron.history = ((history_t & (~mask)) |
-        (((history_t & mask) << 1) & mask)) + (taken << (set * set_length));
-      if(RUN_TEST_TRACES){
-        fprintf(stderr, "GGH Set Index: %lld\n",((long long)set));
-      }
-      }
-      else
-      {
-      pred->dirpred.perceptron->config.perceptron.history <<= 1;
-      pred->dirpred.perceptron->config.perceptron.history += taken;
-      }
-      if(RUN_TEST_TRACES){
-            fprintf(stderr, "New History: %lld\n",pred->dirpred.perceptron->config.perceptron.history&
-                ((1<<pred->dirpred.perceptron->config.perceptron.number_perceptron_bits)-1));
-            fprintf(stderr,"\n\n\n");
-      }
-	  }
+    {
       if (taken)
-	  {
-		if (*dir_update_ptr->pdir1 < 3)
-			++*dir_update_ptr->pdir1;
-	  } else
-		{ /* not taken */
-			if (*dir_update_ptr->pdir1 > 0)
-			--*dir_update_ptr->pdir1;
-	  }
+	{
+	  if (*dir_update_ptr->pdir1 < 3)
+	    ++*dir_update_ptr->pdir1;
+	}
+      else
+	{ /* not taken */
+	  if (*dir_update_ptr->pdir1 > 0)
+	    --*dir_update_ptr->pdir1;
+	}
     }
 
   /* combining predictor also updates second predictor and meta predictor */
